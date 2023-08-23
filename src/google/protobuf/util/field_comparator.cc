@@ -30,35 +30,66 @@
 
 // Author: ksroka@google.com (Krzysztof Sroka)
 
-#include <google/protobuf/util/field_comparator.h>
+#include "google/protobuf/util/field_comparator.h"
 
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
 #include <limits>
 #include <string>
 
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/message.h>
-#include <google/protobuf/util/message_differencer.h>
-#include <google/protobuf/stubs/map_util.h>
-#include <google/protobuf/stubs/mathutil.h>
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/message.h"
+#include "google/protobuf/util/message_differencer.h"
+
+// Must be included last.
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
 namespace util {
+namespace {
+template <typename T>
+struct Epsilon {};
+template <>
+struct Epsilon<float> {
+  constexpr static auto value = 32 * FLT_EPSILON;
+};
+template <>
+struct Epsilon<double> {
+  constexpr static auto value = 32 * DBL_EPSILON;
+};
+
+template <typename T>
+bool WithinFractionOrMargin(const T x, const T y, const T fraction,
+                            const T margin) {
+  ABSL_DCHECK(fraction >= T(0) && fraction < T(1) && margin >= T(0));
+
+  if (!std::isfinite(x) || !std::isfinite(y)) {
+    return false;
+  }
+  const T relative_margin = fraction * std::max(std::fabs(x), std::fabs(y));
+  return std::fabs(x - y) <= std::max(margin, relative_margin);
+}
+
+}  // namespace
 
 FieldComparator::FieldComparator() {}
 FieldComparator::~FieldComparator() {}
 
-DefaultFieldComparator::DefaultFieldComparator()
+SimpleFieldComparator::SimpleFieldComparator()
     : float_comparison_(EXACT),
       treat_nan_as_equal_(false),
       has_default_tolerance_(false) {}
 
-DefaultFieldComparator::~DefaultFieldComparator() {}
+SimpleFieldComparator::~SimpleFieldComparator() {}
 
-FieldComparator::ComparisonResult DefaultFieldComparator::Compare(
+FieldComparator::ComparisonResult SimpleFieldComparator::SimpleCompare(
     const Message& message_1, const Message& message_2,
     const FieldDescriptor* field, int index_1, int index_2,
-    const util::FieldContext* field_context) {
+    const util::FieldContext* /*field_context*/) {
   const Reflection* reflection_1 = message_1.GetReflection();
   const Reflection* reflection_2 = message_2.GetReflection();
 
@@ -121,55 +152,54 @@ FieldComparator::ComparisonResult DefaultFieldComparator::Compare(
       return RECURSE;
 
     default:
-      GOOGLE_LOG(FATAL) << "No comparison code for field " << field->full_name()
-                 << " of CppType = " << field->cpp_type();
+      ABSL_LOG(FATAL) << "No comparison code for field " << field->full_name()
+                      << " of CppType = " << field->cpp_type();
       return DIFFERENT;
   }
 }
 
-bool DefaultFieldComparator::Compare(MessageDifferencer* differencer,
-                                     const Message& message1,
-                                     const Message& message2,
-                                     const util::FieldContext* field_context) {
-  return differencer->Compare(message1, message2,
+bool SimpleFieldComparator::CompareWithDifferencer(
+    MessageDifferencer* differencer, const Message& message1,
+    const Message& message2, const util::FieldContext* field_context) {
+  return differencer->Compare(message1, message2, false,
                               field_context->parent_fields());
 }
 
-void DefaultFieldComparator::SetDefaultFractionAndMargin(double fraction,
-                                                         double margin) {
+void SimpleFieldComparator::SetDefaultFractionAndMargin(double fraction,
+                                                        double margin) {
   default_tolerance_ = Tolerance(fraction, margin);
   has_default_tolerance_ = true;
 }
 
-void DefaultFieldComparator::SetFractionAndMargin(const FieldDescriptor* field,
-                                                  double fraction,
-                                                  double margin) {
-  GOOGLE_CHECK(FieldDescriptor::CPPTYPE_FLOAT == field->cpp_type() ||
-        FieldDescriptor::CPPTYPE_DOUBLE == field->cpp_type())
+void SimpleFieldComparator::SetFractionAndMargin(const FieldDescriptor* field,
+                                                 double fraction,
+                                                 double margin) {
+  ABSL_CHECK(FieldDescriptor::CPPTYPE_FLOAT == field->cpp_type() ||
+             FieldDescriptor::CPPTYPE_DOUBLE == field->cpp_type())
       << "Field has to be float or double type. Field name is: "
       << field->full_name();
   map_tolerance_[field] = Tolerance(fraction, margin);
 }
 
-bool DefaultFieldComparator::CompareDouble(const FieldDescriptor& field,
-                                           double value_1, double value_2) {
+bool SimpleFieldComparator::CompareDouble(const FieldDescriptor& field,
+                                          double value_1, double value_2) {
   return CompareDoubleOrFloat(field, value_1, value_2);
 }
 
-bool DefaultFieldComparator::CompareEnum(const FieldDescriptor& field,
-                                         const EnumValueDescriptor* value_1,
-                                         const EnumValueDescriptor* value_2) {
+bool SimpleFieldComparator::CompareEnum(const FieldDescriptor& /*field*/,
+                                        const EnumValueDescriptor* value_1,
+                                        const EnumValueDescriptor* value_2) {
   return value_1->number() == value_2->number();
 }
 
-bool DefaultFieldComparator::CompareFloat(const FieldDescriptor& field,
-                                          float value_1, float value_2) {
+bool SimpleFieldComparator::CompareFloat(const FieldDescriptor& field,
+                                         float value_1, float value_2) {
   return CompareDoubleOrFloat(field, value_1, value_2);
 }
 
 template <typename T>
-bool DefaultFieldComparator::CompareDoubleOrFloat(const FieldDescriptor& field,
-                                                  T value_1, T value_2) {
+bool SimpleFieldComparator::CompareDoubleOrFloat(const FieldDescriptor& field,
+                                                 T value_1, T value_2) {
   if (value_1 == value_2) {
     // Covers +inf and -inf (which are not within margin or fraction of
     // themselves), and is a shortcut for finite values.
@@ -184,24 +214,33 @@ bool DefaultFieldComparator::CompareDoubleOrFloat(const FieldDescriptor& field,
       return true;
     }
     // float_comparison_ == APPROXIMATE covers two use cases.
-    Tolerance* tolerance = FindOrNull(map_tolerance_, &field);
-    if (tolerance == NULL && has_default_tolerance_) {
-      tolerance = &default_tolerance_;
+    Tolerance* tolerance = nullptr;
+    if (has_default_tolerance_) tolerance = &default_tolerance_;
+
+    auto it = map_tolerance_.find(&field);
+    if (it != map_tolerance_.end()) {
+      tolerance = &it->second;
     }
-    if (tolerance == NULL) {
-      return MathUtil::AlmostEquals(value_1, value_2);
-    } else {
+
+    if (tolerance != nullptr) {
       // Use user-provided fraction and margin. Since they are stored as
       // doubles, we explicitly cast them to types of values provided. This
       // is very likely to fail if provided values are not numeric.
-      return MathUtil::WithinFractionOrMargin(
-          value_1, value_2, static_cast<T>(tolerance->fraction),
-          static_cast<T>(tolerance->margin));
+      return WithinFractionOrMargin(value_1, value_2,
+                                    static_cast<T>(tolerance->fraction),
+                                    static_cast<T>(tolerance->margin));
+    } else {
+      if (std::fabs(value_1) <= Epsilon<T>::value &&
+          std::fabs(value_2) <= Epsilon<T>::value) {
+        return true;
+      }
+      return WithinFractionOrMargin(value_1, value_2, Epsilon<T>::value,
+                                    Epsilon<T>::value);
     }
   }
 }
 
-FieldComparator::ComparisonResult DefaultFieldComparator::ResultFromBoolean(
+FieldComparator::ComparisonResult SimpleFieldComparator::ResultFromBoolean(
     bool boolean_result) const {
   return boolean_result ? FieldComparator::SAME : FieldComparator::DIFFERENT;
 }
@@ -209,3 +248,5 @@ FieldComparator::ComparisonResult DefaultFieldComparator::ResultFromBoolean(
 }  // namespace util
 }  // namespace protobuf
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"

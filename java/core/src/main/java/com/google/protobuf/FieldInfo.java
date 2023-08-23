@@ -36,6 +36,7 @@ import com.google.protobuf.Internal.EnumVerifier;
 import java.lang.reflect.Field;
 
 /** Information for a single field in a protobuf message class. */
+@CheckReturnValue
 @ExperimentalApi
 final class FieldInfo implements Comparable<FieldInfo> {
   private final Field field;
@@ -177,8 +178,8 @@ final class FieldInfo implements Comparable<FieldInfo> {
         cachedSizeField);
   }
 
-  /** Constructor for a proto2 optional field. */
-  public static FieldInfo forProto2OptionalField(
+  /** Constructor for a field with explicit presence (e.g. proto2). */
+  public static FieldInfo forExplicitPresenceField(
       Field field,
       int fieldNumber,
       FieldType fieldType,
@@ -262,8 +263,8 @@ final class FieldInfo implements Comparable<FieldInfo> {
     }
   }
 
-  /** Constructor for a proto2 required field. */
-  public static FieldInfo forProto2RequiredField(
+  /** Constructor for a legacy required field. */
+  public static FieldInfo forLegacyRequiredField(
       Field field,
       int fieldNumber,
       FieldType fieldType,
@@ -547,10 +548,10 @@ final class FieldInfo implements Comparable<FieldInfo> {
       }
       if (presenceField != null) {
         if (required) {
-          return forProto2RequiredField(
+          return forLegacyRequiredField(
               field, fieldNumber, type, presenceField, presenceMask, enforceUtf8, enumVerifier);
         } else {
-          return forProto2OptionalField(
+          return forExplicitPresenceField(
               field, fieldNumber, type, presenceField, presenceMask, enforceUtf8, enumVerifier);
         }
       }

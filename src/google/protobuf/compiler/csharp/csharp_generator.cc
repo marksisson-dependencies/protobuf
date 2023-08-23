@@ -28,25 +28,31 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "google/protobuf/compiler/csharp/csharp_generator.h"
+
 #include <sstream>
 
-#include <google/protobuf/compiler/code_generator.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/io/printer.h>
-#include <google/protobuf/io/zero_copy_stream.h>
-#include <google/protobuf/stubs/strutil.h>
-
-#include <google/protobuf/compiler/csharp/csharp_generator.h>
-#include <google/protobuf/compiler/csharp/csharp_helpers.h>
-#include <google/protobuf/compiler/csharp/csharp_names.h>
-#include <google/protobuf/compiler/csharp/csharp_options.h>
-#include <google/protobuf/compiler/csharp/csharp_reflection_class.h>
+#include "google/protobuf/compiler/code_generator.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/compiler/csharp/csharp_helpers.h"
+#include "google/protobuf/compiler/csharp/csharp_options.h"
+#include "google/protobuf/compiler/csharp/csharp_reflection_class.h"
+#include "google/protobuf/compiler/csharp/names.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/io/printer.h"
+#include "google/protobuf/io/zero_copy_stream.h"
 
 namespace google {
 namespace protobuf {
 namespace compiler {
 namespace csharp {
+
+Generator::Generator() {}
+Generator::~Generator() {}
+
+uint64_t Generator::GetSupportedFeatures() const {
+  return CodeGenerator::Feature::FEATURE_PROTO3_OPTIONAL;
+}
 
 void GenerateFile(const FileDescriptor* file, io::Printer* printer,
                   const Options* options) {
@@ -54,18 +60,16 @@ void GenerateFile(const FileDescriptor* file, io::Printer* printer,
   reflectionClassGenerator.Generate(printer);
 }
 
-bool Generator::Generate(
-    const FileDescriptor* file,
-    const string& parameter,
-    GeneratorContext* generator_context,
-    string* error) const {
-
-  std::vector<std::pair<string, string> > options;
+bool Generator::Generate(const FileDescriptor* file,
+                         const std::string& parameter,
+                         GeneratorContext* generator_context,
+                         std::string* error) const {
+  std::vector<std::pair<std::string, std::string> > options;
   ParseGeneratorParameter(parameter, &options);
 
   struct Options cli_options;
 
-  for (int i = 0; i < options.size(); i++) {
+  for (size_t i = 0; i < options.size(); i++) {
     if (options[i].first == "file_extension") {
       cli_options.file_extension = options[i].second;
     } else if (options[i].first == "base_namespace") {
@@ -76,12 +80,12 @@ bool Generator::Generate(
     } else if (options[i].first == "serializable") {
       cli_options.serializable = true;
     } else {
-      *error = "Unknown generator option: " + options[i].first;
+      *error = absl::StrCat("Unknown generator option: ", options[i].first);
       return false;
     }
   }
 
-  string filename_error = "";
+  std::string filename_error = "";
   std::string filename = GetOutputFile(file,
       cli_options.file_extension,
       cli_options.base_namespace_specified,

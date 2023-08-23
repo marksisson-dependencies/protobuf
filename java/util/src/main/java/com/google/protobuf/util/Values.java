@@ -71,14 +71,11 @@ public final class Values {
   }
 
   /**
-   * Returns a Value with ListValue set to the appending the result of calling {@link #of(Object)}
-   * on each element in the iterable.
+   * Returns a Value with ListValue set to the appending the result of calling {@link #of} on each
+   * element in the iterable.
    */
   public static Value of(Iterable<Value> values) {
-    Value.Builder valueBuilder = Value.newBuilder();
-    ListValue.Builder listValue = valueBuilder.getListValueBuilder();
-    listValue.addAllValues(values);
-    return valueBuilder.build();
+    return Value.newBuilder().setListValue(ListValue.newBuilder().addAllValues(values)).build();
   }
 
   private Values() {}
