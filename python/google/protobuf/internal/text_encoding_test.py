@@ -1,5 +1,3 @@
-#! /usr/bin/python
-#
 # Protocol Buffers - Google's data interchange format
 # Copyright 2008 Google Inc.  All rights reserved.
 # https://developers.google.com/protocol-buffers/
@@ -32,7 +30,8 @@
 
 """Tests for google.protobuf.text_encoding."""
 
-from google.apputils import basetest
+import unittest
+
 from google.protobuf import text_encoding
 
 TEST_VALUES = [
@@ -50,19 +49,19 @@ TEST_VALUES = [
      b"\010\011\012\013\014\015")]
 
 
-class TextEncodingTestCase(basetest.TestCase):
+class TextEncodingTestCase(unittest.TestCase):
   def testCEscape(self):
     for escaped, escaped_utf8, unescaped in TEST_VALUES:
-      self.assertEquals(escaped,
+      self.assertEqual(escaped,
                         text_encoding.CEscape(unescaped, as_utf8=False))
-      self.assertEquals(escaped_utf8,
+      self.assertEqual(escaped_utf8,
                         text_encoding.CEscape(unescaped, as_utf8=True))
 
   def testCUnescape(self):
     for escaped, escaped_utf8, unescaped in TEST_VALUES:
-      self.assertEquals(unescaped, text_encoding.CUnescape(escaped))
-      self.assertEquals(unescaped, text_encoding.CUnescape(escaped_utf8))
+      self.assertEqual(unescaped, text_encoding.CUnescape(escaped))
+      self.assertEqual(unescaped, text_encoding.CUnescape(escaped_utf8))
 
 
 if __name__ == "__main__":
-  basetest.main()
+  unittest.main()
