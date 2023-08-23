@@ -33,12 +33,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
-#if NET35
-// Needed for ReadOnlyDictionary, which does not exist in .NET 3.5
-using Google.Protobuf.Collections;
-#endif
 
 namespace Google.Protobuf.Reflection
 {
@@ -80,6 +77,20 @@ namespace Google.Protobuf.Reflection
                 (oneof, index) =>
                 new OneofDescriptor(oneof, file, this, index, generatedCodeInfo?.OneofNames[index]));
 
+            int syntheticOneofCount = 0;
+            foreach (var oneof in Oneofs)
+            {
+                if (oneof.IsSynthetic)
+                {
+                    syntheticOneofCount++;
+                }
+                else if (syntheticOneofCount != 0)
+                {
+                    throw new ArgumentException("All synthetic oneofs should come after real oneofs");
+                }
+            }
+            RealOneofCount = Oneofs.Count - syntheticOneofCount;
+
             NestedTypes = DescriptorUtil.ConvertAndMakeReadOnly(
                 proto.NestedType,
                 (type, index) =>
@@ -106,9 +117,15 @@ namespace Google.Protobuf.Reflection
         private static ReadOnlyDictionary<string, FieldDescriptor> CreateJsonFieldMap(IList<FieldDescriptor> fields)
         {
             var map = new Dictionary<string, FieldDescriptor>();
+            // The ordering is important here: JsonName takes priority over Name,
+            // which means we need to put JsonName values in the map after *all*
+            // Name keys have been added. See https://github.com/protocolbuffers/protobuf/issues/11987
             foreach (var field in fields)
             {
                 map[field.Name] = field;
+            }
+            foreach (var field in fields)
+            {
                 map[field.JsonName] = field;
             }
             return new ReadOnlyDictionary<string, FieldDescriptor>(map);
@@ -119,22 +136,24 @@ namespace Google.Protobuf.Reflection
         /// </summary>
         public override string Name => Proto.Name;
 
-        internal override IReadOnlyList<DescriptorBase> GetNestedDescriptorListForField(int fieldNumber)
-        {
-            switch (fieldNumber)
+        internal override IReadOnlyList<DescriptorBase> GetNestedDescriptorListForField(int fieldNumber) =>
+            fieldNumber switch
             {
-                case DescriptorProto.FieldFieldNumber:
-                    return (IReadOnlyList<DescriptorBase>) fieldsInDeclarationOrder;
-                case DescriptorProto.NestedTypeFieldNumber:
-                    return (IReadOnlyList<DescriptorBase>) NestedTypes;
-                case DescriptorProto.EnumTypeFieldNumber:
-                    return (IReadOnlyList<DescriptorBase>) EnumTypes;
-                default:
-                    return null;
-            }
-        }
+                DescriptorProto.FieldFieldNumber => (IReadOnlyList<DescriptorBase>)fieldsInDeclarationOrder,
+                DescriptorProto.NestedTypeFieldNumber => (IReadOnlyList<DescriptorBase>)NestedTypes,
+                DescriptorProto.EnumTypeFieldNumber => (IReadOnlyList<DescriptorBase>)EnumTypes,
+                _ => null,
+            };
 
         internal DescriptorProto Proto { get; }
+
+        /// <summary>
+        /// Returns a clone of the underlying <see cref="DescriptorProto"/> describing this message.
+        /// Note that a copy is taken every time this method is called, so clients using it frequently
+        /// (and not modifying it) may want to cache the returned value.
+        /// </summary>
+        /// <returns>A protobuf representation of this message descriptor.</returns>
+        public DescriptorProto ToProto() => Proto.Clone();
 
         internal bool IsExtensionsInitialized(IMessage message)
         {
@@ -168,6 +187,7 @@ namespace Google.Protobuf.Reflection
         /// a wrapper type, and handle the result appropriately.
         /// </para>
         /// </remarks>
+        [DynamicallyAccessedMembers(GeneratedClrTypeInfo.MessageAccessibility)]
         public Type ClrType { get; }
 
         /// <summary>
@@ -234,15 +254,25 @@ namespace Google.Protobuf.Reflection
 
         /// <value>
         /// An unmodifiable list of the "oneof" field collections in this message type.
+        /// All "real" oneofs (where <see cref="OneofDescriptor.IsSynthetic"/> returns false)
+        /// come before synthetic ones.
         /// </value>
         public IList<OneofDescriptor> Oneofs { get; }
+
+        /// <summary>
+        /// The number of real "oneof" descriptors in this message type. Every element in <see cref="Oneofs"/>
+        /// with an index less than this will have a <see cref="OneofDescriptor.IsSynthetic"/> property value
+        /// of <c>false</c>; every element with an index greater than or equal to this will have a
+        /// <see cref="OneofDescriptor.IsSynthetic"/> property value of <c>true</c>.
+        /// </summary>
+        public int RealOneofCount { get; }
 
         /// <summary>
         /// Finds a field by field name.
         /// </summary>
         /// <param name="name">The unqualified name of the field (e.g. "foo").</param>
         /// <returns>The field's descriptor, or null if not found.</returns>
-        public FieldDescriptor FindFieldByName(String name) => File.DescriptorPool.FindSymbol<FieldDescriptor>(FullName + "." + name);
+        public FieldDescriptor FindFieldByName(string name) => File.DescriptorPool.FindSymbol<FieldDescriptor>(FullName + "." + name);
 
         /// <summary>
         /// Finds a field by field number.
@@ -263,12 +293,21 @@ namespace Google.Protobuf.Reflection
         /// <summary>
         /// The (possibly empty) set of custom options for this message.
         /// </summary>
-        [Obsolete("CustomOptions are obsolete. Use GetOption")]
+        [Obsolete("CustomOptions are obsolete. Use the GetOptions() method.")]
         public CustomOptions CustomOptions => new CustomOptions(Proto.Options?._extensions?.ValuesByNumber);
+
+        /// <summary>
+        /// The <c>MessageOptions</c>, defined in <c>descriptor.proto</c>.
+        /// If the options message is not present (i.e. there are no options), <c>null</c> is returned.
+        /// Custom options can be retrieved as extensions of the returned message.
+        /// NOTE: A defensive copy is created each time this property is retrieved.
+        /// </summary>
+        public MessageOptions GetOptions() => Proto.Options?.Clone();
 
         /// <summary>
         /// Gets a single value message option for this descriptor
         /// </summary>
+        [Obsolete("GetOption is obsolete. Use the GetOptions() method.")]
         public T GetOption<T>(Extension<MessageOptions, T> extension)
         {
             var value = Proto.Options.GetExtension(extension);
@@ -278,6 +317,7 @@ namespace Google.Protobuf.Reflection
         /// <summary>
         /// Gets a repeated value message option for this descriptor
         /// </summary>
+        [Obsolete("GetOption is obsolete. Use the GetOptions() method.")]
         public Collections.RepeatedField<T> GetOption<T>(RepeatedExtension<MessageOptions, T> extension)
         {
             return Proto.Options.GetExtension(extension).Clone();

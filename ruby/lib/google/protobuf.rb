@@ -30,6 +30,7 @@
 
 # require mixins before we hook them into the java & c code
 require 'google/protobuf/message_exts'
+require 'google/protobuf/object_cache'
 
 # We define these before requiring the platform-specific modules.
 # That way the module init can grab references to these.
@@ -38,110 +39,46 @@ module Google
     class Error < StandardError; end
     class ParseError < Error; end
     class TypeError < ::TypeError; end
-  end
-end
 
-if RUBY_PLATFORM == "java"
-  require 'json'
-  require 'google/protobuf_java'
-else
-  begin
-    require "google/#{RUBY_VERSION.sub(/\.\d+$/, '')}/protobuf_c"
-  rescue LoadError
-    require 'google/protobuf_c'
-  end
+    PREFER_FFI = case ENV['PROTOCOL_BUFFERS_RUBY_IMPLEMENTATION']
+                 when nil, "", /^native$/i
+                   false
+                 when /^ffi$/i
+                   true
+                 else
+                   warn "Unexpected value `#{ENV['PROTOCOL_BUFFERS_RUBY_IMPLEMENTATION']}` for environment variable `PROTOCOL_BUFFERS_RUBY_IMPLEMENTATION`. Should be either \"FFI\", \"NATIVE\"."
+                   false
+                 end
 
-  module Google
-    module Protobuf
-      module Internal
-        def self.infer_package(names)
-          # Package is longest common prefix ending in '.', if any.
-          if not names.empty?
-            min, max = names.minmax
-            last_common_dot = nil
-            min.size.times { |i|
-              if min[i] != max[i] then break end
-              if min[i] == ?. then last_common_dot = i end
-            }
-            if last_common_dot
-              return min.slice(0, last_common_dot)
-            end
-          end
-
-          nil
-        end
-
-        class NestingBuilder
-          def initialize(msg_names, enum_names)
-            @to_pos = {nil=>nil}
-            @msg_children = Hash.new { |hash, key| hash[key] = [] }
-            @enum_children = Hash.new { |hash, key| hash[key] = [] }
-
-            msg_names.each_with_index { |name, idx| @to_pos[name] = idx }
-            enum_names.each_with_index { |name, idx| @to_pos[name] = idx }
-
-            msg_names.each { |name| @msg_children[parent(name)] << name }
-            enum_names.each { |name| @enum_children[parent(name)] << name }
-          end
-
-          def build(package)
-            return build_msg(package)
-          end
-
-          private
-          def build_msg(msg)
-            return {
-              :pos => @to_pos[msg],
-              :msgs => @msg_children[msg].map { |child| build_msg(child) },
-              :enums => @enum_children[msg].map { |child| @to_pos[child] },
-            }
-          end
-
-          private
-          def parent(name)
-            idx = name.rindex(?.)
-            if idx
-              return name.slice(0, idx)
-            else
-              return nil
-            end
-          end
-        end
-
-        def self.fixup_descriptor(package, msg_names, enum_names)
-          if package.nil?
-            package = self.infer_package(msg_names + enum_names)
-          end
-
-          nesting = NestingBuilder.new(msg_names, enum_names).build(package)
-
-          return package, nesting
-        end
-      end
-    end
-  end
-end
-
-require 'google/protobuf/repeated_field'
-
-module Google
-  module Protobuf
-
-    def self.encode(msg)
-      msg.to_proto
+    def self.encode(msg, options = {})
+      msg.to_proto(options)
     end
 
     def self.encode_json(msg, options = {})
       msg.to_json(options)
     end
 
-    def self.decode(klass, proto)
-      klass.decode(proto)
+    def self.decode(klass, proto, options = {})
+      klass.decode(proto, options)
     end
 
     def self.decode_json(klass, json, options = {})
       klass.decode_json(json, options)
     end
 
+    IMPLEMENTATION = if PREFER_FFI
+      begin
+        require 'google/protobuf_ffi'
+        :FFI
+      rescue LoadError
+        warn "Caught exception `#{$!.message}` while loading FFI implementation of google/protobuf."
+        warn "Falling back to native implementation."
+        require 'google/protobuf_native'
+        :NATIVE
+      end
+    else
+      require 'google/protobuf_native'
+      :NATIVE
+    end
   end
 end

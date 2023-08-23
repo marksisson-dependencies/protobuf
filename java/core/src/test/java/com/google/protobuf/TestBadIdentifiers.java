@@ -43,10 +43,13 @@ public class TestBadIdentifiers extends TestCase {
 
   public void testCompilation() {
     // If this compiles, it means the generation was correct.
-    TestBadIdentifiersProto.Deprecated.newBuilder();
-    TestBadIdentifiersProto.Override.newBuilder();
+    TestBadIdentifiersProto.Deprecated unused1 =
+        TestBadIdentifiersProto.Deprecated.newBuilder().build();
+    TestBadIdentifiersProto.Override unused2 =
+        TestBadIdentifiersProto.Override.getDefaultInstance();
   }
 
+  @SuppressWarnings({"IgnoredPureGetter", "CheckReturnValue"}) // TODO(b/221602772): Fix this
   public void testGetDescriptor() {
     TestBadIdentifiersProto.getDescriptor();
     TestBadIdentifiersProto.Descriptor.getDefaultInstance().getDescriptor();
@@ -96,7 +99,6 @@ public class TestBadIdentifiers extends TestCase {
     assertEquals("", message.getFieldName33());
     assertEquals(0, message.get2Conflict34());
     assertEquals(0, message.get2Conflict35());
-
   }
 
   public void testNumberFields() throws Exception {
@@ -117,6 +119,5 @@ public class TestBadIdentifiers extends TestCase {
     assertEquals(0, message.get32());
     assertEquals(0, message.get64Count());
     assertEquals(0, message.get64List().size());
-
   }
 }

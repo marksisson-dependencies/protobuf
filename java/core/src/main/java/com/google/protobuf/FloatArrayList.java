@@ -45,10 +45,7 @@ import java.util.RandomAccess;
 final class FloatArrayList extends AbstractProtobufList<Float>
     implements FloatList, RandomAccess, PrimitiveNonBoxingCollection {
 
-  private static final FloatArrayList EMPTY_LIST = new FloatArrayList(new float[0], 0);
-  static {
-    EMPTY_LIST.makeImmutable();
-  }
+  private static final FloatArrayList EMPTY_LIST = new FloatArrayList(new float[0], 0, false);
 
   public static FloatArrayList emptyList() {
     return EMPTY_LIST;
@@ -65,14 +62,15 @@ final class FloatArrayList extends AbstractProtobufList<Float>
 
   /** Constructs a new mutable {@code FloatArrayList} with default capacity. */
   FloatArrayList() {
-    this(new float[DEFAULT_CAPACITY], 0);
+    this(new float[DEFAULT_CAPACITY], 0, true);
   }
 
   /**
    * Constructs a new mutable {@code FloatArrayList} containing the same elements as {@code other}.
    */
-  private FloatArrayList(float[] other, int size) {
-    array = other;
+  private FloatArrayList(float[] other, int size, boolean isMutable) {
+    super(isMutable);
+    this.array = other;
     this.size = size;
   }
 
@@ -125,7 +123,7 @@ final class FloatArrayList extends AbstractProtobufList<Float>
     if (capacity < size) {
       throw new IllegalArgumentException();
     }
-    return new FloatArrayList(Arrays.copyOf(array, capacity), size);
+    return new FloatArrayList(Arrays.copyOf(array, capacity), size, true);
   }
 
   @Override
@@ -137,6 +135,26 @@ final class FloatArrayList extends AbstractProtobufList<Float>
   public float getFloat(int index) {
     ensureIndexInRange(index);
     return array[index];
+  }
+
+  @Override
+  public int indexOf(Object element) {
+    if (!(element instanceof Float)) {
+      return -1;
+    }
+    float unboxedElement = (Float) element;
+    int numElems = size();
+    for (int i = 0; i < numElems; i++) {
+      if (array[i] == unboxedElement) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  @Override
+  public boolean contains(Object element) {
+    return indexOf(element) != -1;
   }
 
   @Override
@@ -244,20 +262,6 @@ final class FloatArrayList extends AbstractProtobufList<Float>
     size = newSize;
     modCount++;
     return true;
-  }
-
-  @Override
-  public boolean remove(Object o) {
-    ensureIsMutable();
-    for (int i = 0; i < size; i++) {
-      if (o.equals(array[i])) {
-        System.arraycopy(array, i + 1, array, i, size - i - 1);
-        size--;
-        modCount++;
-        return true;
-      }
-    }
-    return false;
   }
 
   @Override

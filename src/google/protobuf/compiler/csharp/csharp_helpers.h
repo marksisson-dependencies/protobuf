@@ -36,14 +36,16 @@
 #define GOOGLE_PROTOBUF_COMPILER_CSHARP_HELPERS_H__
 
 #include <string>
-#include <google/protobuf/port.h>
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/compiler/code_generator.h>
-#include <google/protobuf/io/printer.h>
 
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/compiler/code_generator.h"
+#include "absl/strings/string_view.h"
+#include "google/protobuf/compiler/csharp/names.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/io/printer.h"
+#include "google/protobuf/port.h"
+#include "google/protobuf/port_def.inc"
+#include "google/protobuf/stubs/common.h"
 
 namespace google {
 namespace protobuf {
@@ -72,40 +74,23 @@ enum CSharpType {
 // Converts field type to corresponding C# type.
 CSharpType GetCSharpType(FieldDescriptor::Type type);
 
-std::string StripDotProto(const std::string& proto_file);
-
-// Gets unqualified name of the reflection class
-std::string GetReflectionClassUnqualifiedName(const FileDescriptor* descriptor);
-// Gets unqualified name of the extension class
-std::string GetExtensionClassUnqualifiedName(const FileDescriptor* descriptor);
-
-std::string GetClassName(const EnumDescriptor* descriptor);
-
 std::string GetFieldName(const FieldDescriptor* descriptor);
 
 std::string GetFieldConstantName(const FieldDescriptor* field);
 
 std::string GetPropertyName(const FieldDescriptor* descriptor);
 
+std::string GetOneofCaseName(const FieldDescriptor* descriptor);
+
 int GetFixedSize(FieldDescriptor::Type type);
-
-std::string UnderscoresToCamelCase(const std::string& input,
-                                   bool cap_next_letter,
-                                   bool preserve_period);
-
-inline std::string UnderscoresToCamelCase(const std::string& input, bool cap_next_letter) {
-  return UnderscoresToCamelCase(input, cap_next_letter, false);
-}
-
-std::string UnderscoresToPascalCase(const std::string& input);
 
 // Note that we wouldn't normally want to export this (we're not expecting
 // it to be used outside libprotoc itself) but this exposes it for testing.
-std::string PROTOC_EXPORT GetEnumValueName(const std::string& enum_name,
-                                           const std::string& enum_value_name);
+std::string PROTOC_EXPORT GetEnumValueName(absl::string_view enum_name,
+                                           absl::string_view enum_value_name);
 
 // TODO(jtattermusch): perhaps we could move this to strutil
-std::string StringToBase64(const std::string& input);
+std::string StringToBase64(absl::string_view input);
 
 std::string FileDescriptorToBase64(const FileDescriptor* descriptor);
 
@@ -130,7 +115,8 @@ uint GetGroupEndTag(const Descriptor* descriptor);
 // descriptors etc, for use in the runtime. This is the only type which is
 // allowed to use proto2 syntax, and it generates internal classes.
 inline bool IsDescriptorProto(const FileDescriptor* descriptor) {
-  return descriptor->name() == "google/protobuf/descriptor.proto";
+  return descriptor->name() == "google/protobuf/descriptor.proto" ||
+         descriptor->name() == "net/proto2/proto/descriptor.proto";
 }
 
 // Determines whether the given message is an options message within descriptor.proto.
@@ -138,15 +124,15 @@ inline bool IsDescriptorOptionMessage(const Descriptor* descriptor) {
   if (!IsDescriptorProto(descriptor->file())) {
     return false;
   }
-  const string name = descriptor->full_name();
-  return name == "google.protobuf.FileOptions" ||
-      name == "google.protobuf.MessageOptions" ||
-      name == "google.protobuf.FieldOptions" ||
-      name == "google.protobuf.OneofOptions" ||
-      name == "google.protobuf.EnumOptions" ||
-      name == "google.protobuf.EnumValueOptions" ||
-      name == "google.protobuf.ServiceOptions" ||
-      name == "google.protobuf.MethodOptions";
+  const std::string name = descriptor->name();
+  return name == "FileOptions" ||
+      name == "MessageOptions" ||
+      name == "FieldOptions" ||
+      name == "OneofOptions" ||
+      name == "EnumOptions" ||
+      name == "EnumValueOptions" ||
+      name == "ServiceOptions" ||
+      name == "MethodOptions";
 }
 
 inline bool IsWrapperType(const FieldDescriptor* descriptor) {
@@ -154,8 +140,23 @@ inline bool IsWrapperType(const FieldDescriptor* descriptor) {
       descriptor->message_type()->file()->name() == "google/protobuf/wrappers.proto";
 }
 
-inline bool IsProto2(const FileDescriptor* descriptor) {
-  return descriptor->syntax() == FileDescriptor::SYNTAX_PROTO2;
+inline bool SupportsPresenceApi(const FieldDescriptor* descriptor) {
+  // Unlike most languages, we don't generate Has/Clear members for message
+  // types, because they can always be set to null in C#. They're not really
+  // needed for oneof fields in proto2 either, as everything can be done via
+  // oneof case, but we follow the convention from other languages.
+  if (descriptor->type() == FieldDescriptor::TYPE_MESSAGE) {
+    return false;
+  }
+
+  return descriptor->has_presence();
+}
+
+inline bool RequiresPresenceBit(const FieldDescriptor* descriptor) {
+  return SupportsPresenceApi(descriptor) &&
+    !IsNullable(descriptor) &&
+    !descriptor->is_extension() &&
+    !descriptor->real_containing_oneof();
 }
 
 }  // namespace csharp
@@ -163,6 +164,6 @@ inline bool IsProto2(const FileDescriptor* descriptor) {
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_COMPILER_CSHARP_HELPERS_H__

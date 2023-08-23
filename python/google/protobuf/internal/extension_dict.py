@@ -87,10 +87,14 @@ class _ExtensionDict(object):
     if extension_handle.label == FieldDescriptor.LABEL_REPEATED:
       result = extension_handle._default_constructor(self._extended_message)
     elif extension_handle.cpp_type == FieldDescriptor.CPPTYPE_MESSAGE:
-      assert getattr(extension_handle.message_type, '_concrete_class', None), (
-          'Uninitialized concrete class found for field %r (message type %r)'
-          % (extension_handle.full_name,
-             extension_handle.message_type.full_name))
+      message_type = extension_handle.message_type
+      if not hasattr(message_type, '_concrete_class'):
+        # pylint: disable=g-import-not-at-top
+        from google.protobuf import message_factory
+        message_factory.GetMessageClass(message_type)
+      if not hasattr(extension_handle.message_type, '_concrete_class'):
+        from google.protobuf import message_factory
+        message_factory.GetMessageClass(extension_handle.message_type)
       result = extension_handle.message_type._concrete_class()
       try:
         result._SetListener(self._extended_message._listener_for_children)
@@ -139,7 +143,7 @@ class _ExtensionDict(object):
 
   # Note that this is only meaningful for non-repeated, scalar extension
   # fields.  Note also that we may have to call _Modified() when we do
-  # successfully set a field this way, to set any necssary "has" bits in the
+  # successfully set a field this way, to set any necessary "has" bits in the
   # ancestors of the extended message.
   def __setitem__(self, extension_handle, value):
     """If extension_handle specifies a non-repeated, scalar extension
@@ -174,7 +178,9 @@ class _ExtensionDict(object):
     Returns:
       Extension field descriptor.
     """
-    return self._extended_message._extensions_by_name.get(name, None)
+    descriptor = self._extended_message.DESCRIPTOR
+    extensions = descriptor.file.pool._extensions_by_name[descriptor]
+    return extensions.get(name, None)
 
   def _FindExtensionByNumber(self, number):
     """Tries to find a known extension with the field number.
@@ -185,7 +191,9 @@ class _ExtensionDict(object):
     Returns:
       Extension field descriptor.
     """
-    return self._extended_message._extensions_by_number.get(number, None)
+    descriptor = self._extended_message.DESCRIPTOR
+    extensions = descriptor.file.pool._extensions_by_number[descriptor]
+    return extensions.get(number, None)
 
   def __iter__(self):
     # Return a generator over the populated extension fields

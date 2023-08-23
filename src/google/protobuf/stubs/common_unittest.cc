@@ -30,16 +30,17 @@
 
 // Author: kenton@google.com (Kenton Varda)
 
-#include <vector>
-#include <google/protobuf/stubs/callback.h>
-#include <google/protobuf/stubs/casts.h>
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/logging.h>
-#include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/stubs/substitute.h>
+#include "google/protobuf/stubs/common.h"
 
-#include <google/protobuf/testing/googletest.h>
 #include <gtest/gtest.h>
+
+#include <vector>
+
+#include "absl/log/absl_log.h"
+#include "absl/strings/ascii.h"
+#include "absl/strings/substitute.h"
+#include "google/protobuf/stubs/callback.h"
+#include "google/protobuf/testing/googletest.h"
 
 namespace google {
 namespace protobuf {
@@ -53,10 +54,10 @@ TEST(VersionTest, VersionMatchesConfig) {
   // Verify that the version string specified in config.h matches the one
   // in common.h.  The config.h version is a string which may have a suffix
   // like "beta" or "rc1", so we remove that.
-  string version = PACKAGE_VERSION;
+  std::string version = PACKAGE_VERSION;
   int pos = 0;
   while (pos < version.size() &&
-         (ascii_isdigit(version[pos]) || version[pos] == '.')) {
+         (absl::ascii_isdigit(version[pos]) || version[pos] == '.')) {
     ++pos;
   }
   version.erase(pos);
@@ -77,100 +78,16 @@ TEST(CommonTest, IntMinMaxConstants) {
   EXPECT_EQ(0, kuint64max + 1);
 }
 
-std::vector<string> captured_messages_;
-
-void CaptureLog(LogLevel level, const char* filename, int line,
-                const string& message) {
-  captured_messages_.push_back(
-    strings::Substitute("$0 $1:$2: $3",
-      implicit_cast<int>(level), filename, line, message));
-}
-
-TEST(LoggingTest, DefaultLogging) {
-  CaptureTestStderr();
-  int line = __LINE__;
-  GOOGLE_LOG(INFO   ) << "A message.";
-  GOOGLE_LOG(WARNING) << "A warning.";
-  GOOGLE_LOG(ERROR  ) << "An error.";
-
-  string text = GetCapturedTestStderr();
-  EXPECT_EQ(
-    "[libprotobuf INFO " __FILE__ ":" + SimpleItoa(line + 1) + "] A message.\n"
-    "[libprotobuf WARNING " __FILE__ ":" + SimpleItoa(line + 2) + "] A warning.\n"
-    "[libprotobuf ERROR " __FILE__ ":" + SimpleItoa(line + 3) + "] An error.\n",
-    text);
-}
-
-TEST(LoggingTest, NullLogging) {
-  LogHandler* old_handler = SetLogHandler(nullptr);
-
-  CaptureTestStderr();
-  GOOGLE_LOG(INFO   ) << "A message.";
-  GOOGLE_LOG(WARNING) << "A warning.";
-  GOOGLE_LOG(ERROR  ) << "An error.";
-
-  EXPECT_TRUE(SetLogHandler(old_handler) == nullptr);
-
-  string text = GetCapturedTestStderr();
-  EXPECT_EQ("", text);
-}
-
-TEST(LoggingTest, CaptureLogging) {
-  captured_messages_.clear();
-
-  LogHandler* old_handler = SetLogHandler(&CaptureLog);
-
-  int start_line = __LINE__;
-  GOOGLE_LOG(ERROR) << "An error.";
-  GOOGLE_LOG(WARNING) << "A warning.";
-
-  EXPECT_TRUE(SetLogHandler(old_handler) == &CaptureLog);
-
-  ASSERT_EQ(2, captured_messages_.size());
-  EXPECT_EQ(
-    "2 " __FILE__ ":" + SimpleItoa(start_line + 1) + ": An error.",
-    captured_messages_[0]);
-  EXPECT_EQ(
-    "1 " __FILE__ ":" + SimpleItoa(start_line + 2) + ": A warning.",
-    captured_messages_[1]);
-}
-
-TEST(LoggingTest, SilenceLogging) {
-  captured_messages_.clear();
-
-  LogHandler* old_handler = SetLogHandler(&CaptureLog);
-
-  int line1 = __LINE__; GOOGLE_LOG(INFO) << "Visible1";
-  LogSilencer* silencer1 = new LogSilencer;
-  GOOGLE_LOG(INFO) << "Not visible.";
-  LogSilencer* silencer2 = new LogSilencer;
-  GOOGLE_LOG(INFO) << "Not visible.";
-  delete silencer1;
-  GOOGLE_LOG(INFO) << "Not visible.";
-  delete silencer2;
-  int line2 = __LINE__; GOOGLE_LOG(INFO) << "Visible2";
-
-  EXPECT_TRUE(SetLogHandler(old_handler) == &CaptureLog);
-
-  ASSERT_EQ(2, captured_messages_.size());
-  EXPECT_EQ(
-    "0 " __FILE__ ":" + SimpleItoa(line1) + ": Visible1",
-    captured_messages_[0]);
-  EXPECT_EQ(
-    "0 " __FILE__ ":" + SimpleItoa(line2) + ": Visible2",
-    captured_messages_[1]);
-}
-
 class ClosureTest : public testing::Test {
  public:
   void SetA123Method()   { a_ = 123; }
   static void SetA123Function() { current_instance_->a_ = 123; }
 
   void SetAMethod(int a)         { a_ = a; }
-  void SetCMethod(string c)      { c_ = c; }
+  void SetCMethod(std::string c) { c_ = c; }
 
   static void SetAFunction(int a)         { current_instance_->a_ = a; }
-  static void SetCFunction(string c)      { current_instance_->c_ = c; }
+  static void SetCFunction(std::string c) { current_instance_->c_ = c; }
 
   void SetABMethod(int a, const char* b)  { a_ = a; b_ = b; }
   static void SetABFunction(int a, const char* b) {
@@ -192,7 +109,7 @@ class ClosureTest : public testing::Test {
 
   int a_;
   const char* b_;
-  string c_;
+  std::string c_;
   Closure* permanent_closure_;
 
   static ClosureTest* current_instance_;
@@ -231,15 +148,15 @@ TEST_F(ClosureTest, TestClosureMethod1) {
 }
 
 TEST_F(ClosureTest, TestClosureFunction1String) {
-  Closure* closure = NewCallback(&SetCFunction, string("test"));
+  Closure* closure = NewCallback(&SetCFunction, std::string("test"));
   EXPECT_NE("test", c_);
   closure->Run();
   EXPECT_EQ("test", c_);
 }
 
 TEST_F(ClosureTest, TestClosureMethod1String) {
-  Closure* closure = NewCallback(current_instance_,
-                                 &ClosureTest::SetCMethod, string("test"));
+  Closure* closure = NewCallback(current_instance_, &ClosureTest::SetCMethod,
+                                 std::string("test"));
   EXPECT_NE("test", c_);
   closure->Run();
   EXPECT_EQ("test", c_);

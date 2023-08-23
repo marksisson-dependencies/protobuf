@@ -55,7 +55,6 @@ public class TypeRegistry {
     return EmptyTypeRegistryHolder.EMPTY;
   }
 
-
   public static Builder newBuilder() {
     return new Builder();
   }
@@ -70,7 +69,6 @@ public class TypeRegistry {
   /**
    * Find a type by its typeUrl. Returns null if it cannot be found in this {@link TypeRegistry}.
    */
-  /* @Nullable */
   public final Descriptor getDescriptorForTypeUrl(String typeUrl)
       throws InvalidProtocolBufferException {
     return find(getTypeName(typeUrl));
@@ -84,7 +82,7 @@ public class TypeRegistry {
 
   private static String getTypeName(String typeUrl) throws InvalidProtocolBufferException {
     String[] parts = typeUrl.split("/");
-    if (parts.length == 1) {
+    if (parts.length <= 1) {
       throw new InvalidProtocolBufferException("Invalid type url found: " + typeUrl);
     }
     return parts[parts.length - 1];

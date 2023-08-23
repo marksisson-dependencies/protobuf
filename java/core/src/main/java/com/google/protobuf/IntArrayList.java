@@ -45,10 +45,7 @@ import java.util.RandomAccess;
 final class IntArrayList extends AbstractProtobufList<Integer>
     implements IntList, RandomAccess, PrimitiveNonBoxingCollection {
 
-  private static final IntArrayList EMPTY_LIST = new IntArrayList(new int[0], 0);
-  static {
-    EMPTY_LIST.makeImmutable();
-  }
+  private static final IntArrayList EMPTY_LIST = new IntArrayList(new int[0], 0, false);
 
   public static IntArrayList emptyList() {
     return EMPTY_LIST;
@@ -65,13 +62,14 @@ final class IntArrayList extends AbstractProtobufList<Integer>
 
   /** Constructs a new mutable {@code IntArrayList} with default capacity. */
   IntArrayList() {
-    this(new int[DEFAULT_CAPACITY], 0);
+    this(new int[DEFAULT_CAPACITY], 0, true);
   }
 
   /**
    * Constructs a new mutable {@code IntArrayList} containing the same elements as {@code other}.
    */
-  private IntArrayList(int[] other, int size) {
+  private IntArrayList(int[] other, int size, boolean isMutable) {
+    super(isMutable);
     array = other;
     this.size = size;
   }
@@ -125,7 +123,7 @@ final class IntArrayList extends AbstractProtobufList<Integer>
     if (capacity < size) {
       throw new IllegalArgumentException();
     }
-    return new IntArrayList(Arrays.copyOf(array, capacity), size);
+    return new IntArrayList(Arrays.copyOf(array, capacity), size, true);
   }
 
   @Override
@@ -137,6 +135,26 @@ final class IntArrayList extends AbstractProtobufList<Integer>
   public int getInt(int index) {
     ensureIndexInRange(index);
     return array[index];
+  }
+
+  @Override
+  public int indexOf(Object element) {
+    if (!(element instanceof Integer)) {
+      return -1;
+    }
+    int unboxedElement = (Integer) element;
+    int numElems = size();
+    for (int i = 0; i < numElems; i++) {
+      if (array[i] == unboxedElement) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  @Override
+  public boolean contains(Object element) {
+    return indexOf(element) != -1;
   }
 
   @Override
@@ -244,20 +262,6 @@ final class IntArrayList extends AbstractProtobufList<Integer>
     size = newSize;
     modCount++;
     return true;
-  }
-
-  @Override
-  public boolean remove(Object o) {
-    ensureIsMutable();
-    for (int i = 0; i < size; i++) {
-      if (o.equals(array[i])) {
-        System.arraycopy(array, i + 1, array, i, size - i - 1);
-        size--;
-        modCount++;
-        return true;
-      }
-    }
-    return false;
   }
 
   @Override
