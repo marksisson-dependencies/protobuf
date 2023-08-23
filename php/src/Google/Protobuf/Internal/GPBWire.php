@@ -50,8 +50,8 @@ class GPBWire
 
     public static function getTagFieldNumber($tag)
     {
-        return ($tag >> self::TAG_TYPE_BITS) &
-            (1 << ((PHP_INT_SIZE * 8) - self::TAG_TYPE_BITS)) - 1;
+        // We have to mask because PHP has no arithmetic shift.
+        return ($tag >> self::TAG_TYPE_BITS) & 0x1fffffff;
     }
 
     public static function getTagWireType($tag)
@@ -146,7 +146,7 @@ class GPBWire
                 return bcsub(bcmul(bcsub(0, $int64), 2), 1);
             }
         } else {
-            return ($int64 << 1) ^ ($int64 >> 63);
+            return ((int)$int64 << 1) ^ ((int)$int64 >> 63);
         }
     }
 
@@ -241,7 +241,7 @@ class GPBWire
         if (!$input->readRaw(4, $data)) {
             return false;
         }
-        $value = unpack('f', $data)[1];
+        $value = unpack('g', $data)[1];
         return true;
     }
 
@@ -251,7 +251,7 @@ class GPBWire
         if (!$input->readRaw(8, $data)) {
             return false;
         }
-        $value = unpack('d', $data)[1];
+        $value = unpack('e', $data)[1];
         return true;
     }
 
@@ -360,13 +360,13 @@ class GPBWire
 
     public static function writeFloat(&$output, $value)
     {
-        $data = pack("f", $value);
+        $data = pack("g", $value);
         return $output->writeRaw($data, 4);
     }
 
     public static function writeDouble(&$output, $value)
     {
-        $data = pack("d", $value);
+        $data = pack("e", $value);
         return $output->writeRaw($data, 8);
     }
 

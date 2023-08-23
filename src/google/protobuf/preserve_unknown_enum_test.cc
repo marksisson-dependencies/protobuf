@@ -28,12 +28,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <google/protobuf/unittest.pb.h>
-#include <google/protobuf/unittest_preserve_unknown_enum.pb.h>
-#include <google/protobuf/unittest_preserve_unknown_enum2.pb.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/dynamic_message.h>
 #include <gtest/gtest.h>
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/dynamic_message.h"
+#include "google/protobuf/unittest.pb.h"
+#include "google/protobuf/unittest_preserve_unknown_enum.pb.h"
+#include "google/protobuf/unittest_preserve_unknown_enum2.pb.h"
 
 namespace google {
 namespace protobuf {
@@ -137,7 +137,7 @@ TEST(PreserveUnknownEnumTest, Proto2HidesUnknownValues) {
   // The intermediate message has everything in its "unknown fields".
   proto2_preserve_unknown_enum_unittest::MyMessage message2 = message;
   message2.DiscardUnknownFields();
-  EXPECT_EQ(0, message2.ByteSize());
+  EXPECT_EQ(0, message2.ByteSizeLong());
 
   // But when we pass it to the correct structure, all values are there.
   serialized.clear();
@@ -165,7 +165,7 @@ TEST(PreserveUnknownEnumTest, DynamicProto2HidesUnknownValues) {
   proto2_preserve_unknown_enum_unittest::MyMessage message2;
   message2.CopyFrom(*message);
   message2.DiscardUnknownFields();
-  EXPECT_EQ(0, message2.ByteSize());
+  EXPECT_EQ(0, message2.ByteSizeLong());
 
   // But when we pass it to the correct structure, all values are there.
   serialized.clear();
@@ -245,7 +245,7 @@ TEST(PreserveUnknownEnumTest, Proto2CatchesUnknownValues) {
   // SetRepeatedEnumValue.
   const EnumValueDescriptor* enum_value =
       repeated_field->enum_type()->FindValueByName("BAR");
-  EXPECT_TRUE(enum_value != NULL);
+  EXPECT_TRUE(enum_value != nullptr);
   r->AddEnum(&message, repeated_field, enum_value);
 
   const FieldDescriptor* singular_field =
@@ -276,15 +276,5 @@ TEST(PreserveUnknownEnumTest, Proto2CatchesUnknownValues) {
   EXPECT_EQ(message.unknown_fields().field(2).varint(), 4242);
 }
 
-TEST(PreserveUnknownEnumTest, SupportsUnknownEnumValuesAPI) {
-  protobuf_unittest::TestAllTypes proto2_message;
-  proto3_preserve_unknown_enum_unittest::MyMessage new_message;
-
-  const Reflection* proto2_reflection = proto2_message.GetReflection();
-  const Reflection* new_reflection = new_message.GetReflection();
-
-  EXPECT_FALSE(proto2_reflection->SupportsUnknownEnumValues());
-  EXPECT_TRUE(new_reflection->SupportsUnknownEnumValues());
-}
 }  // namespace protobuf
 }  // namespace google

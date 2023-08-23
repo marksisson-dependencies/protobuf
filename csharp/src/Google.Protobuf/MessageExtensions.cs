@@ -33,6 +33,7 @@
 using Google.Protobuf.Reflection;
 using System.Buffers;
 using System.Collections;
+using System;
 using System.IO;
 using System.Linq;
 using System.Security;
@@ -79,6 +80,24 @@ namespace Google.Protobuf
             MergeFrom(message, input, false, null);
 
         /// <summary>
+        /// Merges data from the given span into an existing message.
+        /// </summary>
+        /// <param name="message">The message to merge the data into.</param>
+        /// <param name="span">Span containing the data to merge, which must be protobuf-encoded binary data.</param>
+        [SecuritySafeCritical]
+        public static void MergeFrom(this IMessage message, ReadOnlySpan<byte> span) =>
+            MergeFrom(message, span, false, null);
+
+        /// <summary>
+        /// Merges data from the given sequence into an existing message.
+        /// </summary>
+        /// <param name="message">The message to merge the data into.</param>
+        /// <param name="sequence">Sequence from the specified data to merge, which must be protobuf-encoded binary data.</param>
+        [SecuritySafeCritical]
+        public static void MergeFrom(this IMessage message, ReadOnlySequence<byte> sequence) =>
+            MergeFrom(message, sequence, false, null);
+
+        /// <summary>
         /// Merges length-delimited data from the given stream into an existing message.
         /// </summary>
         /// <remarks>
@@ -97,7 +116,7 @@ namespace Google.Protobuf
         /// <returns>The message data as a byte array.</returns>
         public static byte[] ToByteArray(this IMessage message)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
             byte[] result = new byte[message.CalculateSize()];
             CodedOutputStream output = new CodedOutputStream(result);
             message.WriteTo(output);
@@ -112,8 +131,8 @@ namespace Google.Protobuf
         /// <param name="output">The stream to write to.</param>
         public static void WriteTo(this IMessage message, Stream output)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(output, "output");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(output, nameof(output));
             CodedOutputStream codedOutput = new CodedOutputStream(output);
             message.WriteTo(codedOutput);
             codedOutput.Flush();
@@ -126,10 +145,10 @@ namespace Google.Protobuf
         /// <param name="output">The output stream to write to.</param>
         public static void WriteDelimitedTo(this IMessage message, Stream output)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(output, "output");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(output, nameof(output));
             CodedOutputStream codedOutput = new CodedOutputStream(output);
-            codedOutput.WriteRawVarint32((uint)message.CalculateSize());
+            codedOutput.WriteLength(message.CalculateSize());
             message.WriteTo(codedOutput);
             codedOutput.Flush();
         }
@@ -141,8 +160,41 @@ namespace Google.Protobuf
         /// <returns>The message data as a byte string.</returns>
         public static ByteString ToByteString(this IMessage message)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
             return ByteString.AttachBytes(message.ToByteArray());
+        }
+
+        /// <summary>
+        /// Writes the given message data to the given buffer writer in protobuf encoding.
+        /// </summary>
+        /// <param name="message">The message to write to the stream.</param>
+        /// <param name="output">The stream to write to.</param>
+        [SecuritySafeCritical]
+        public static void WriteTo(this IMessage message, IBufferWriter<byte> output)
+        {
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(output, nameof(output));
+
+            WriteContext.Initialize(output, out WriteContext ctx);
+            WritingPrimitivesMessages.WriteRawMessage(ref ctx, message);
+            ctx.Flush();
+        }
+
+        /// <summary>
+        /// Writes the given message data to the given span in protobuf encoding.
+        /// The size of the destination span needs to fit the serialized size
+        /// of the message exactly, otherwise an exception is thrown.
+        /// </summary>
+        /// <param name="message">The message to write to the stream.</param>
+        /// <param name="output">The span to write to. Size must match size of the message exactly.</param>
+        [SecuritySafeCritical]
+        public static void WriteTo(this IMessage message, Span<byte> output)
+        {
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+
+            WriteContext.Initialize(ref output, out WriteContext ctx);
+            WritingPrimitivesMessages.WriteRawMessage(ref ctx, message);
+            ctx.CheckNoSpaceLeft();
         }
 
         /// <summary>
@@ -208,30 +260,34 @@ namespace Google.Protobuf
         // Implementations allowing unknown fields to be discarded.
         internal static void MergeFrom(this IMessage message, byte[] data, bool discardUnknownFields, ExtensionRegistry registry)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(data, "data");
-            CodedInputStream input = new CodedInputStream(data);
-            input.DiscardUnknownFields = discardUnknownFields;
-            input.ExtensionRegistry = registry;
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(data, nameof(data));
+            CodedInputStream input = new CodedInputStream(data)
+            {
+                DiscardUnknownFields = discardUnknownFields,
+                ExtensionRegistry = registry
+            };
             message.MergeFrom(input);
             input.CheckReadEndOfStreamTag();
         }
 
         internal static void MergeFrom(this IMessage message, byte[] data, int offset, int length, bool discardUnknownFields, ExtensionRegistry registry)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(data, "data");
-            CodedInputStream input = new CodedInputStream(data, offset, length);
-            input.DiscardUnknownFields = discardUnknownFields;
-            input.ExtensionRegistry = registry;
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(data, nameof(data));
+            CodedInputStream input = new CodedInputStream(data, offset, length)
+            {
+                DiscardUnknownFields = discardUnknownFields,
+                ExtensionRegistry = registry
+            };
             message.MergeFrom(input);
             input.CheckReadEndOfStreamTag();
         }
 
         internal static void MergeFrom(this IMessage message, ByteString data, bool discardUnknownFields, ExtensionRegistry registry)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(data, "data");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(data, nameof(data));
             CodedInputStream input = data.CreateCodedInput();
             input.DiscardUnknownFields = discardUnknownFields;
             input.ExtensionRegistry = registry;
@@ -241,11 +297,13 @@ namespace Google.Protobuf
 
         internal static void MergeFrom(this IMessage message, Stream input, bool discardUnknownFields, ExtensionRegistry registry)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(input, "input");
-            CodedInputStream codedInput = new CodedInputStream(input);
-            codedInput.DiscardUnknownFields = discardUnknownFields;
-            codedInput.ExtensionRegistry = registry;
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(input, nameof(input));
+            CodedInputStream codedInput = new CodedInputStream(input)
+            {
+                DiscardUnknownFields = discardUnknownFields,
+                ExtensionRegistry = registry
+            };
             message.MergeFrom(codedInput);
             codedInput.CheckReadEndOfStreamTag();
         }
@@ -260,10 +318,20 @@ namespace Google.Protobuf
             ParsingPrimitivesMessages.CheckReadEndOfStreamTag(ref ctx.state);
         }
 
+        [SecuritySafeCritical]
+        internal static void MergeFrom(this IMessage message, ReadOnlySpan<byte> data, bool discardUnknownFields, ExtensionRegistry registry)
+        {
+            ParseContext.Initialize(data, out ParseContext ctx);
+            ctx.DiscardUnknownFields = discardUnknownFields;
+            ctx.ExtensionRegistry = registry;
+            ParsingPrimitivesMessages.ReadRawMessage(ref ctx, message);
+            ParsingPrimitivesMessages.CheckReadEndOfStreamTag(ref ctx.state);
+        }
+
         internal static void MergeDelimitedFrom(this IMessage message, Stream input, bool discardUnknownFields, ExtensionRegistry registry)
         {
-            ProtoPreconditions.CheckNotNull(message, "message");
-            ProtoPreconditions.CheckNotNull(input, "input");
+            ProtoPreconditions.CheckNotNull(message, nameof(message));
+            ProtoPreconditions.CheckNotNull(input, nameof(input));
             int size = (int) CodedInputStream.ReadRawVarint32(input);
             Stream limitedStream = new LimitedInputStream(input, size);
             MergeFrom(message, limitedStream, discardUnknownFields, registry);

@@ -35,9 +35,9 @@
 
 #include <string>
 
-#include <google/protobuf/compiler/code_generator.h>
+#include "google/protobuf/compiler/code_generator.h"
 
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
@@ -54,10 +54,10 @@ class PROTOC_EXPORT Generator : public CodeGenerator {
   ~Generator();
   bool Generate(
     const FileDescriptor* file,
-    const string& parameter,
+    const std::string& parameter,
     GeneratorContext* generator_context,
-    string* error) const override;
-  uint64 GetSupportedFeatures() const override;
+    std::string* error) const override;
+  uint64_t GetSupportedFeatures() const override;
 };
 
 }  // namespace csharp
@@ -65,6 +65,6 @@ class PROTOC_EXPORT Generator : public CodeGenerator {
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_COMPILER_CSHARP_GENERATOR_H__

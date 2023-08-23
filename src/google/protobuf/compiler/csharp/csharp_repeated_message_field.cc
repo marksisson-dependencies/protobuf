@@ -28,19 +28,19 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "google/protobuf/compiler/csharp/csharp_repeated_message_field.h"
+
 #include <sstream>
 
-#include <google/protobuf/compiler/code_generator.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/io/printer.h>
-#include <google/protobuf/io/zero_copy_stream.h>
-
-#include <google/protobuf/compiler/csharp/csharp_doc_comment.h>
-#include <google/protobuf/compiler/csharp/csharp_helpers.h>
-#include <google/protobuf/compiler/csharp/csharp_repeated_message_field.h>
-#include <google/protobuf/compiler/csharp/csharp_message_field.h>
-#include <google/protobuf/compiler/csharp/csharp_wrapper_field.h>
+#include "google/protobuf/compiler/code_generator.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/compiler/csharp/csharp_doc_comment.h"
+#include "google/protobuf/compiler/csharp/csharp_helpers.h"
+#include "google/protobuf/compiler/csharp/csharp_message_field.h"
+#include "google/protobuf/compiler/csharp/csharp_wrapper_field.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/io/printer.h"
+#include "google/protobuf/io/zero_copy_stream.h"
 
 namespace google {
 namespace protobuf {
@@ -93,15 +93,27 @@ void RepeatedMessageFieldGenerator::GenerateMergingCode(io::Printer* printer) {
 }
 
 void RepeatedMessageFieldGenerator::GenerateParsingCode(io::Printer* printer) {
+  GenerateParsingCode(printer, true);
+}
+
+void RepeatedMessageFieldGenerator::GenerateParsingCode(io::Printer* printer, bool use_parse_context) {
   printer->Print(
     variables_,
-    "$name$_.AddEntriesFrom(ref input, _repeated_$name$_codec);\n");
+    use_parse_context
+    ? "$name$_.AddEntriesFrom(ref input, _repeated_$name$_codec);\n"
+    : "$name$_.AddEntriesFrom(input, _repeated_$name$_codec);\n");
 }
 
 void RepeatedMessageFieldGenerator::GenerateSerializationCode(io::Printer* printer) {
+  GenerateSerializationCode(printer, true);
+}
+
+void RepeatedMessageFieldGenerator::GenerateSerializationCode(io::Printer* printer, bool use_write_context) {
   printer->Print(
     variables_,
-    "$name$_.WriteTo(output, _repeated_$name$_codec);\n");
+    use_write_context
+    ? "$name$_.WriteTo(ref output, _repeated_$name$_codec);\n"
+    : "$name$_.WriteTo(output, _repeated_$name$_codec);\n");
 }
 
 void RepeatedMessageFieldGenerator::GenerateSerializedSizeCode(io::Printer* printer) {

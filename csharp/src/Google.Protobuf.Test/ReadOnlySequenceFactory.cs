@@ -33,29 +33,37 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Google.Protobuf
 {
     internal static class ReadOnlySequenceFactory
     {
-        public static ReadOnlySequence<byte> CreateWithContent(byte[] data, int segmentSize = 1)
+        /// <summary>
+        /// Create a sequence from the specified data. The data will be divided up into segments in the sequence.
+        /// </summary>
+        public static ReadOnlySequence<byte> CreateWithContent(byte[] data, int segmentSize = 1, bool addEmptySegmentDelimiters = true)
         {
             var segments = new List<byte[]>();
 
-            segments.Add(new byte[0]);
+            if (addEmptySegmentDelimiters)
+            {
+                segments.Add(Array.Empty<byte>());
+            }
+
             var currentIndex = 0;
             while (currentIndex < data.Length)
             {
                 var segment = new List<byte>();
-                for (; currentIndex < Math.Min(currentIndex + segmentSize, data.Length); currentIndex++)
+                while (segment.Count < segmentSize && currentIndex < data.Length)
                 {
-                    segment.Add(data[currentIndex]);
+                    segment.Add(data[currentIndex++]);
                 }
                 segments.Add(segment.ToArray());
-                segments.Add(new byte[0]);
+
+                if (addEmptySegmentDelimiters)
+                {
+                    segments.Add(Array.Empty<byte>());
+                }
             }
 
             return CreateSegments(segments.ToArray());

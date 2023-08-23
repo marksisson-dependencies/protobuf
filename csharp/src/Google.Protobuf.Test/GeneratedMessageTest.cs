@@ -1,4 +1,4 @@
-﻿#region Copyright notice and license
+#region Copyright notice and license
 // Protocol Buffers - Google's data interchange format
 // Copyright 2015 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
@@ -33,12 +33,10 @@
 using System;
 using System.IO;
 using Google.Protobuf.TestProtos;
-using Proto2 = Google.Protobuf.TestProtos.Proto2;
 using NUnit.Framework;
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using Google.Protobuf.WellKnownTypes;
+using Google.Protobuf.Collections;
 
 namespace Google.Protobuf
 {
@@ -132,6 +130,8 @@ namespace Google.Protobuf
             byte[] bytes = message.ToByteArray();
             Assert.AreEqual(0, bytes.Length);
 
+            MessageParsingHelpers.AssertWritingMessage(message);
+
             MessageParsingHelpers.AssertRoundtrip(TestAllTypes.Parser, message);
         }
 
@@ -164,7 +164,7 @@ namespace Google.Protobuf
                 SingleUint64 = ulong.MaxValue
             };
 
-            byte[] bytes = message.ToByteArray();
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertRoundtrip(TestAllTypes.Parser, message);
         }
@@ -198,7 +198,7 @@ namespace Google.Protobuf
                 RepeatedUint64 = { ulong.MaxValue, uint.MinValue }
             };
 
-            byte[] bytes = message.ToByteArray();
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertRoundtrip(TestAllTypes.Parser, message);
         }
@@ -230,7 +230,7 @@ namespace Google.Protobuf
                 }
             };
 
-            byte[] bytes = message.ToByteArray();
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertRoundtrip(TestMap.Parser, message);
         }
@@ -245,6 +245,8 @@ namespace Google.Protobuf
 
             byte[] bytes = message.ToByteArray();
             Assert.AreEqual(2, bytes.Length); // Tag for field entry (1 byte), length of entry (0; 1 byte)
+
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertReadingMessage(
                 TestMap.Parser,
@@ -654,11 +656,15 @@ namespace Google.Protobuf
         [Test]
         public void OneofSerialization_NonDefaultValue()
         {
-            var message = new TestAllTypes();
-            message.OneofString = "this would take a bit of space";
-            message.OneofUint32 = 10;
+            var message = new TestAllTypes
+            {
+                OneofString = "this would take a bit of space",
+                OneofUint32 = 10
+            };
             var bytes = message.ToByteArray();
             Assert.AreEqual(3, bytes.Length); // 2 bytes for the tag + 1 for the value - no string!
+
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertRoundtrip(TestAllTypes.Parser, message, parsedMessage =>
             {
@@ -669,11 +675,15 @@ namespace Google.Protobuf
         [Test]
         public void OneofSerialization_DefaultValue()
         {
-            var message = new TestAllTypes();
-            message.OneofString = "this would take a bit of space";
-            message.OneofUint32 = 0; // This is the default value for UInt32; normally wouldn't be serialized
+            var message = new TestAllTypes
+            {
+                OneofString = "this would take a bit of space",
+                OneofUint32 = 0 // This is the default value for UInt32; normally wouldn't be serialized
+            };
             var bytes = message.ToByteArray();
             Assert.AreEqual(3, bytes.Length); // 2 bytes for the tag + 1 for the value - it's still serialized
+
+            MessageParsingHelpers.AssertWritingMessage(message);
 
             MessageParsingHelpers.AssertRoundtrip(TestAllTypes.Parser, message, parsedMessage =>
             {
@@ -738,7 +748,6 @@ namespace Google.Protobuf
         [Test]
         public void ExtraEndGroupThrows()
         {
-            var message = SampleMessages.CreateFullTestAllTypes();
             var stream = new MemoryStream();
             var output = new CodedOutputStream(stream);
 
@@ -786,6 +795,45 @@ namespace Google.Protobuf
 
             EqualityTester.AssertInequality(message1, message2);
             EqualityTester.AssertEquality(message1, message3);
+        }
+
+        [Test]
+        [TestCase(false)]
+        [TestCase(true)]
+        public void MapFieldMerging(bool direct)
+        {
+            var message1 = new TestMap
+            {
+                MapStringString =
+                {
+                    { "x1", "y1" },
+                    { "common", "message1" }
+                }
+            };
+            var message2 = new TestMap
+            {
+                MapStringString =
+                {
+                    { "x2", "y2" },
+                    { "common", "message2" }
+                }
+            };
+            if (direct)
+            {
+                message1.MergeFrom(message2);
+            }
+            else
+            {
+                message1.MergeFrom(message2.ToByteArray());
+            }
+
+            var expected = new MapField<string, string>
+            {
+                { "x1", "y1" },
+                { "x2", "y2" },
+                { "common", "message2" }
+            };
+            Assert.AreEqual(expected, message1.MapStringString);
         }
     }
 }
