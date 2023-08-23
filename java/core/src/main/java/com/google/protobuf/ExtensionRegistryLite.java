@@ -84,10 +84,8 @@ public class ExtensionRegistryLite {
   static final String EXTENSION_CLASS_NAME = "com.google.protobuf.Extension";
 
   private static class ExtensionClassHolder {
-    /* @Nullable */
     static final Class<?> INSTANCE = resolveExtensionClass();
 
-    /* @Nullable */
     static Class<?> resolveExtensionClass() {
       try {
         return Class.forName(EXTENSION_CLASS_NAME);
@@ -125,22 +123,20 @@ public class ExtensionRegistryLite {
    * ExtensionRegistry} (if the full (non-Lite) proto libraries are available).
    */
   public static ExtensionRegistryLite getEmptyRegistry() {
+    if (!doFullRuntimeInheritanceCheck) {
+      return EMPTY_REGISTRY_LITE;
+    }
     ExtensionRegistryLite result = emptyRegistry;
     if (result == null) {
       synchronized (ExtensionRegistryLite.class) {
         result = emptyRegistry;
         if (result == null) {
-          result =
-              emptyRegistry =
-                  doFullRuntimeInheritanceCheck
-                      ? ExtensionRegistryFactory.createEmpty()
-                      : EMPTY_REGISTRY_LITE;
+          result = emptyRegistry = ExtensionRegistryFactory.createEmpty();
         }
       }
     }
     return result;
   }
-
 
   /** Returns an unmodifiable view of the registry. */
   public ExtensionRegistryLite getUnmodifiable() {

@@ -33,7 +33,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -59,8 +58,7 @@ namespace Google.Protobuf.Collections
         [Test]
         public void Add_SingleItem()
         {
-            var list = new RepeatedField<string>();
-            list.Add("foo");
+            var list = new RepeatedField<string> { "foo" };
             Assert.AreEqual(1, list.Count);
             Assert.AreEqual("foo", list[0]);
         }
@@ -68,8 +66,7 @@ namespace Google.Protobuf.Collections
         [Test]
         public void Add_Sequence()
         {
-            var list = new RepeatedField<string>();
-            list.Add(new[] { "foo", "bar" });
+            var list = new RepeatedField<string> { new[] { "foo", "bar" } };
             Assert.AreEqual(2, list.Count);
             Assert.AreEqual("foo", list[0]);
             Assert.AreEqual("bar", list[1]);
@@ -293,15 +290,13 @@ namespace Google.Protobuf.Collections
         public void Enumerator()
         {
             var list = new RepeatedField<string> { "first", "second" };
-            using (var enumerator = list.GetEnumerator())
-            {
-                Assert.IsTrue(enumerator.MoveNext());
-                Assert.AreEqual("first", enumerator.Current);
-                Assert.IsTrue(enumerator.MoveNext());
-                Assert.AreEqual("second", enumerator.Current);
-                Assert.IsFalse(enumerator.MoveNext());
-                Assert.IsFalse(enumerator.MoveNext());
-            }
+            using var enumerator = list.GetEnumerator();
+            Assert.IsTrue(enumerator.MoveNext());
+            Assert.AreEqual("first", enumerator.Current);
+            Assert.IsTrue(enumerator.MoveNext());
+            Assert.AreEqual("second", enumerator.Current);
+            Assert.IsFalse(enumerator.MoveNext());
+            Assert.IsFalse(enumerator.MoveNext());
         }
 
         [Test]
@@ -595,6 +590,95 @@ namespace Google.Protobuf.Collections
             Assert.AreEqual(((SampleEnum)(-5)), values[5]);
         }
 
+        [Test]
+        public void TestPackedRepeatedFieldCollectionNonDivisibleLength()
+        {
+            uint tag = WireFormat.MakeTag(10, WireFormat.WireType.LengthDelimited);
+            var codec = FieldCodec.ForFixed32(tag);
+            var stream = new MemoryStream();
+            var output = new CodedOutputStream(stream);
+            output.WriteTag(tag);
+            output.WriteString("A long string");
+            output.WriteTag(codec.Tag);
+            output.WriteRawVarint32((uint)codec.FixedSize - 1); // Length not divisible by FixedSize
+            output.WriteFixed32(uint.MaxValue);
+            output.Flush();
+            stream.Position = 0;
+
+            var input = new CodedInputStream(stream);
+            input.ReadTag();
+            input.ReadString();
+            input.ReadTag();
+            var field = new RepeatedField<uint>();
+            Assert.Throws<InvalidProtocolBufferException>(() => field.AddEntriesFrom(input, codec));
+
+            // Collection was not pre-initialized
+            Assert.AreEqual(0, field.Count);
+        }
+
+        [Test]
+        public void TestPackedRepeatedFieldCollectionNotAllocatedWhenLengthExceedsBuffer()
+        {
+            uint tag = WireFormat.MakeTag(10, WireFormat.WireType.LengthDelimited);
+            var codec = FieldCodec.ForFixed32(tag);
+            var stream = new MemoryStream();
+            var output = new CodedOutputStream(stream);
+            output.WriteTag(tag);
+            output.WriteString("A long string");
+            output.WriteTag(codec.Tag);
+            output.WriteRawVarint32((uint)codec.FixedSize);
+            // Note that there is no content for the packed field.
+            // The field length exceeds the remaining length of content.
+            output.Flush();
+            stream.Position = 0;
+
+            var input = new CodedInputStream(stream);
+            input.ReadTag();
+            input.ReadString();
+            input.ReadTag();
+            var field = new RepeatedField<uint>();
+            Assert.Throws<InvalidProtocolBufferException>(() => field.AddEntriesFrom(input, codec));
+
+            // Collection was not pre-initialized
+            Assert.AreEqual(0, field.Count);
+        }
+
+        [Test]
+        public void TestPackedRepeatedFieldCollectionNotAllocatedWhenLengthExceedsRemainingData()
+        {
+            uint tag = WireFormat.MakeTag(10, WireFormat.WireType.LengthDelimited);
+            var codec = FieldCodec.ForFixed32(tag);
+            var stream = new MemoryStream();
+            var output = new CodedOutputStream(stream);
+            output.WriteTag(tag);
+            output.WriteString("A long string");
+            output.WriteTag(codec.Tag);
+            output.WriteRawVarint32((uint)codec.FixedSize);
+            // Note that there is no content for the packed field.
+            // The field length exceeds the remaining length of the buffer.
+            output.Flush();
+            stream.Position = 0;
+
+            var sequence = ReadOnlySequenceFactory.CreateWithContent(stream.ToArray());
+            ParseContext.Initialize(sequence, out ParseContext ctx);
+
+            ctx.ReadTag();
+            ctx.ReadString();
+            ctx.ReadTag();
+            var field = new RepeatedField<uint>();
+            try
+            {
+                field.AddEntriesFrom(ref ctx, codec);
+                Assert.Fail();
+            }
+            catch (InvalidProtocolBufferException)
+            {
+            }
+
+            // Collection was not pre-initialized
+            Assert.AreEqual(0, field.Count);
+        }
+
         // Fairly perfunctory tests for the non-generic IList implementation
         [Test]
         public void IList_Indexer()
@@ -751,7 +835,7 @@ namespace Google.Protobuf.Collections
             var list2 = new RepeatedField<double> { SampleNaNs.Regular, SampleNaNs.PayloadFlipped };
             var list3 = new RepeatedField<double> { SampleNaNs.Regular, SampleNaNs.SignallingFlipped };
 
-            // All SampleNaNs have the same hashcode under certain targets (e.g. netcoreapp2.1)
+            // All SampleNaNs have the same hashcode under certain targets (e.g. netcoreapp3.1)
             EqualityTester.AssertInequality(list1, list2, checkHashcode: false);
             EqualityTester.AssertEquality(list1, list3);
             Assert.True(list1.Contains(SampleNaNs.SignallingFlipped));
@@ -803,6 +887,18 @@ namespace Google.Protobuf.Collections
 
             Assert.DoesNotThrow(() => list.Capacity = 0, "Can set Capacity to 0");
             Assert.AreEqual(0, list.Capacity);
+        }
+
+        [Test]
+        public void Clear_CapacityUnaffected()
+        {
+            var list = new RepeatedField<int> { 1 };
+            Assert.AreEqual(1, list.Count);
+            Assert.AreEqual(8, list.Capacity);
+
+            list.Clear();
+            Assert.AreEqual(0, list.Count);
+            Assert.AreEqual(8, list.Capacity);
         }
     }
 }

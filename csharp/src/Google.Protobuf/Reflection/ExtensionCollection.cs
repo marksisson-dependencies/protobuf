@@ -93,7 +93,7 @@ namespace Google.Protobuf.Reflection
 
         /// <summary>
         /// Returns a readonly list of all the extensions define in this type that extend 
-        /// the provided descriptor type in accending field order
+        /// the provided descriptor type in ascending field order
         /// </summary>
         public IList<FieldDescriptor> GetExtensionsInNumberOrder(MessageDescriptor descriptor)
         {
@@ -107,13 +107,13 @@ namespace Google.Protobuf.Reflection
             {
                 descriptor.CrossLink();
 
-                IList<FieldDescriptor> _;
-                if (!declarationOrder.TryGetValue(descriptor.ExtendeeType, out _))
+                if (!declarationOrder.TryGetValue(descriptor.ExtendeeType, out IList<FieldDescriptor> list))
                 {
-                    declarationOrder.Add(descriptor.ExtendeeType, new List<FieldDescriptor>());
+                    list = new List<FieldDescriptor>();
+                    declarationOrder.Add(descriptor.ExtendeeType, list);
                 }
 
-                declarationOrder[descriptor.ExtendeeType].Add(descriptor);
+                list.Add(descriptor);
             }
 
             extensionsByTypeInDeclarationOrder = declarationOrder

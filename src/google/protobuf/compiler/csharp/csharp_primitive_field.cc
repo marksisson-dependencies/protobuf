@@ -28,19 +28,20 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "google/protobuf/compiler/csharp/csharp_primitive_field.h"
+
 #include <sstream>
+#include <string>
+#include <utility>
 
-#include <google/protobuf/compiler/code_generator.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/io/printer.h>
-#include <google/protobuf/io/zero_copy_stream.h>
-#include <google/protobuf/stubs/strutil.h>
-
-#include <google/protobuf/compiler/csharp/csharp_doc_comment.h>
-#include <google/protobuf/compiler/csharp/csharp_helpers.h>
-#include <google/protobuf/compiler/csharp/csharp_options.h>
-#include <google/protobuf/compiler/csharp/csharp_primitive_field.h>
+#include "google/protobuf/compiler/code_generator.h"
+#include "absl/strings/str_cat.h"
+#include "google/protobuf/compiler/csharp/csharp_doc_comment.h"
+#include "google/protobuf/compiler/csharp/csharp_helpers.h"
+#include "google/protobuf/compiler/csharp/csharp_options.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/io/printer.h"
 
 namespace google {
 namespace protobuf {
@@ -53,9 +54,12 @@ PrimitiveFieldGenerator::PrimitiveFieldGenerator(
   // TODO(jonskeet): Make this cleaner...
   is_value_type = descriptor->type() != FieldDescriptor::TYPE_STRING
       && descriptor->type() != FieldDescriptor::TYPE_BYTES;
-  if (!is_value_type && !IsProto2(descriptor_->file())) {
-    variables_["has_property_check"] = variables_["property_name"] + ".Length != 0";
-    variables_["other_has_property_check"] = "other." + variables_["property_name"] + ".Length != 0";
+  if (!is_value_type && !SupportsPresenceApi(descriptor_)) {
+    std::string property_name = variables_["property_name"];
+    variables_["has_property_check"] =
+        absl::StrCat(property_name, ".Length != 0");
+    variables_["other_has_property_check"] =
+        absl::StrCat("other.", property_name, ".Length != 0");
   }
 }
 
@@ -63,42 +67,65 @@ PrimitiveFieldGenerator::~PrimitiveFieldGenerator() {
 }
 
 void PrimitiveFieldGenerator::GenerateMembers(io::Printer* printer) {
-  // TODO(jonskeet): Work out whether we want to prevent the fields from ever being
-  // null, or whether we just handle it, in the cases of bytes and string.
-  // (Basically, should null-handling code be in the getter or the setter?)
-  if (IsProto2(descriptor_->file())) {
+  // Note: in multiple places, this code assumes that all fields
+  // that support presence are either nullable, or use a presence field bit.
+  // Fields which are oneof members are not generated here; they're generated in PrimitiveOneofFieldGenerator below.
+  // Extensions are not generated here either.
+
+  // Explicit presence allows different default values to be specified. These
+  // are retained via static fields. They don't particularly need to be, but we
+  // don't need to change that. Under implicit presence we don't use static
+  // fields for default values and just use the literals instead.
+  if (descriptor_->has_presence()) {
+    // Note: "private readonly static" isn't as idiomatic as
+    // "private static readonly", but changing this now would create a lot of
+    // churn in generated code with near-to-zero benefit.
     printer->Print(
       variables_,
       "private readonly static $type_name$ $property_name$DefaultValue = $default_value$;\n\n");
+    std::string property_name = variables_["property_name"];
+    variables_["default_value_access"] =
+        absl::StrCat(property_name, "DefaultValue");
+  } else {
+    std::string default_value = variables_["default_value"];
+    variables_["default_value_access"] = std::move(default_value);
   }
 
+  // Declare the field itself.
   printer->Print(
     variables_,
     "private $type_name$ $name_def_message$;\n");
 
   WritePropertyDocComment(printer, descriptor_);
   AddPublicMemberAttributes(printer);
-  if (IsProto2(descriptor_->file())) {
-    if (presenceIndex_ == -1) {
+
+  // Most of the work is done in the property:
+  // Declare the property itself (the same for all options)
+  printer->Print(variables_, "$access_level$ $type_name$ $property_name$ {\n");
+
+  // Specify the "getter", which may need to check for a presence field.
+  if (SupportsPresenceApi(descriptor_)) {
+    if (IsNullable(descriptor_)) {
       printer->Print(
         variables_,
-        "$access_level$ $type_name$ $property_name$ {\n"
-        "  get { return $name$_ ?? $property_name$DefaultValue; }\n"
-        "  set {\n");
+        "  get { return $name$_ ?? $default_value_access$; }\n");
     } else {
       printer->Print(
         variables_,
-        "$access_level$ $type_name$ $property_name$ {\n"
-        "  get { if ($has_field_check$) { return $name$_; } else { return $property_name$DefaultValue; } }\n"
-        "  set {\n");
+        // Note: it's possible that this could be rewritten as a
+        // conditional ?: expression, but there's no significant benefit
+        // to changing it.
+        "  get { if ($has_field_check$) { return $name$_; } else { return $default_value_access$; } }\n");
     }
   } else {
     printer->Print(
       variables_,
-      "$access_level$ $type_name$ $property_name$ {\n"
-      "  get { return $name$_; }\n"
-      "  set {\n");
+      "  get { return $name$_; }\n");
   }
+
+  // Specify the "setter", which may need to set a field bit as well as the
+  // value.
+  printer->Print("  set {\n");
   if (presenceIndex_ != -1) {
     printer->Print(
       variables_,
@@ -116,8 +143,11 @@ void PrimitiveFieldGenerator::GenerateMembers(io::Printer* printer) {
   printer->Print(
     "  }\n"
     "}\n");
-  if (IsProto2(descriptor_->file())) {
-    printer->Print(variables_, "/// <summary>Gets whether the \"$descriptor_name$\" field is set</summary>\n");
+
+  // The "HasFoo" property, where required.
+  if (SupportsPresenceApi(descriptor_)) {
+    printer->Print(variables_,
+      "/// <summary>Gets whether the \"$descriptor_name$\" field is set</summary>\n");
     AddPublicMemberAttributes(printer);
     printer->Print(
       variables_,
@@ -133,8 +163,11 @@ void PrimitiveFieldGenerator::GenerateMembers(io::Printer* printer) {
         "$has_field_check$; }\n}\n");
     }
   }
-  if (IsProto2(descriptor_->file())) {
-    printer->Print(variables_, "/// <summary>Clears the value of the \"$descriptor_name$\" field</summary>\n");
+
+  // The "ClearFoo" method, where required.
+  if (SupportsPresenceApi(descriptor_)) {
+    printer->Print(variables_,
+      "/// <summary>Clears the value of the \"$descriptor_name$\" field</summary>\n");
     AddPublicMemberAttributes(printer);
     printer->Print(
       variables_,
@@ -186,7 +219,7 @@ void PrimitiveFieldGenerator::GenerateSerializedSizeCode(io::Printer* printer) {
   } else {
     printer->Print(
       "size += $tag_size$ + $fixed_size$;\n",
-      "fixed_size", StrCat(fixedSize),
+      "fixed_size", absl::StrCat(fixedSize),
       "tag_size", variables_["tag_size"]);
   }
   printer->Outdent();
@@ -267,10 +300,10 @@ void PrimitiveOneofFieldGenerator::GenerateMembers(io::Printer* printer) {
   }
   printer->Print(
     variables_,
-    "    $oneof_name$Case_ = $oneof_property_name$OneofCase.$property_name$;\n"
+    "    $oneof_name$Case_ = $oneof_property_name$OneofCase.$oneof_case_name$;\n"
     "  }\n"
     "}\n");
-  if (IsProto2(descriptor_->file())) {
+  if (SupportsPresenceApi(descriptor_)) {
     printer->Print(
       variables_,
       "/// <summary>Gets whether the \"$descriptor_name$\" field is set</summary>\n");
@@ -278,7 +311,7 @@ void PrimitiveOneofFieldGenerator::GenerateMembers(io::Printer* printer) {
     printer->Print(
       variables_,
       "$access_level$ bool Has$property_name$ {\n"
-      "  get { return $oneof_name$Case_ == $oneof_property_name$OneofCase.$property_name$; }\n"
+      "  get { return $oneof_name$Case_ == $oneof_property_name$OneofCase.$oneof_case_name$; }\n"
       "}\n");
     printer->Print(
       variables_,

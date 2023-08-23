@@ -38,16 +38,21 @@
 #ifndef GOOGLE_PROTOBUF_COMPILER_COMMAND_LINE_INTERFACE_H__
 #define GOOGLE_PROTOBUF_COMPILER_COMMAND_LINE_INTERFACE_H__
 
-#include <map>
+#include <cstdint>
+#include <functional>
 #include <memory>
-#include <set>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/port_def.inc>
+#include "absl/container/btree_map.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/strings/string_view.h"
+#include "google/protobuf/port.h"
+
+// Must be included last.
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
@@ -67,6 +72,12 @@ namespace compiler {
 class CodeGenerator;     // code_generator.h
 class GeneratorContext;  // code_generator.h
 class DiskSourceTree;    // importer.h
+
+struct TransitiveDependencyOptions {
+  bool include_json_name = false;
+  bool include_source_code_info = false;
+  bool retain_options = false;
+};
 
 // This class implements the command-line interface to the protocol compiler.
 // It is designed to make it very easy to create a custom protocol compiler
@@ -96,14 +107,14 @@ class DiskSourceTree;    // importer.h
 //   protoc --cpp_out=outdir --foo_out=outdir --proto_path=src src/foo.proto
 //
 // The .proto file to compile can be specified on the command line using either
-// its physical file path, or a virtual path relative to a diretory specified
+// its physical file path, or a virtual path relative to a directory specified
 // in --proto_path. For example, for src/foo.proto, the following two protoc
 // invocations work the same way:
 //   1. protoc --proto_path=src src/foo.proto (physical file path)
 //   2. protoc --proto_path=src foo.proto (virtual path relative to src)
 //
 // If a file path can be interpreted both as a physical file path and as a
-// relative virtual path, the physical file path takes precendence.
+// relative virtual path, the physical file path takes precedence.
 //
 // For a full description of the command-line syntax, invoke it with --help.
 class PROTOC_EXPORT CommandLineInterface {
@@ -111,6 +122,8 @@ class PROTOC_EXPORT CommandLineInterface {
   static const char* const kPathSeparator;
 
   CommandLineInterface();
+  CommandLineInterface(const CommandLineInterface&) = delete;
+  CommandLineInterface& operator=(const CommandLineInterface&) = delete;
   ~CommandLineInterface();
 
   // Register a code generator for a language.
@@ -193,7 +206,7 @@ class PROTOC_EXPORT CommandLineInterface {
   // DEPRECATED. Calling this method has no effect. Protocol compiler now
   // always try to find the .proto file relative to the current directory
   // first and if the file is not found, it will then treat the input path
-  // as a virutal path.
+  // as a virtual path.
   void SetInputsAreProtoPathRelative(bool /* enable */) {}
 
   // Provides some text which will be printed when the --version flag is
@@ -208,8 +221,8 @@ class PROTOC_EXPORT CommandLineInterface {
   class ErrorPrinter;
   class GeneratorContextImpl;
   class MemoryOutputStream;
-  typedef std::unordered_map<std::string, std::unique_ptr<GeneratorContextImpl>>
-      GeneratorContextMap;
+  using GeneratorContextMap =
+      absl::flat_hash_map<std::string, std::unique_ptr<GeneratorContextImpl>>;
 
   // Clear state from previous Run().
   void Clear();
@@ -224,6 +237,12 @@ class PROTOC_EXPORT CommandLineInterface {
   // directories in proto_path_.  Returns false if an error occurred.
   bool MakeInputsBeProtoPathRelative(DiskSourceTree* source_tree,
                                      DescriptorDatabase* fallback_database);
+
+  // Fails if these files use proto3 optional and the code generator doesn't
+  // support it. This is a permanent check.
+  bool EnforceProto3OptionalSupport(
+      const std::string& codegen_name, uint64_t supported_features,
+      const std::vector<const FileDescriptor*>& parsed_files) const;
 
 
   // Return status for ParseArguments() and InterpretArgument().
@@ -268,11 +287,9 @@ class PROTOC_EXPORT CommandLineInterface {
   // Verify that all the input files exist in the given database.
   bool VerifyInputFilesInDescriptors(DescriptorDatabase* fallback_database);
 
-  // Loads descriptor_set_in into the provided database
-  bool PopulateSimpleDescriptorDatabase(SimpleDescriptorDatabase* database);
-
   // Parses input_files_ into parsed_files
   bool ParseInputFiles(DescriptorPool* descriptor_pool,
+                       DiskSourceTree* source_tree,
                        std::vector<const FileDescriptor*>* parsed_files);
 
   // Generate the given output file from the given input.
@@ -298,21 +315,6 @@ class PROTOC_EXPORT CommandLineInterface {
       const GeneratorContextMap& output_directories,
       DiskSourceTree* source_tree);
 
-  // Get all transitive dependencies of the given file (including the file
-  // itself), adding them to the given list of FileDescriptorProtos.  The
-  // protos will be ordered such that every file is listed before any file that
-  // depends on it, so that you can call DescriptorPool::BuildFile() on them
-  // in order.  Any files in *already_seen will not be added, and each file
-  // added will be inserted into *already_seen.  If include_source_code_info is
-  // true then include the source code information in the FileDescriptorProtos.
-  // If include_json_name is true, populate the json_name field of
-  // FieldDescriptorProto for all fields.
-  static void GetTransitiveDependencies(
-      const FileDescriptor* file, bool include_json_name,
-      bool include_source_code_info,
-      std::set<const FileDescriptor*>* already_seen,
-      RepeatedPtrField<FileDescriptorProto>* output);
-
   // Implements the --print_free_field_numbers. This function prints free field
   // numbers into stdout for the message and it's nested message types in
   // post-order, i.e. nested types first. Printed range are left-right
@@ -329,6 +331,22 @@ class PROTOC_EXPORT CommandLineInterface {
   // listed as free numbers in the output.
   void PrintFreeFieldNumbers(const Descriptor* descriptor);
 
+  // Get all transitive dependencies of the given file (including the file
+  // itself), adding them to the given list of FileDescriptorProtos.  The
+  // protos will be ordered such that every file is listed before any file that
+  // depends on it, so that you can call DescriptorPool::BuildFile() on them
+  // in order.  Any files in *already_seen will not be added, and each file
+  // added will be inserted into *already_seen.  If include_source_code_info
+  // (from TransitiveDependencyOptions) is true then include the source code
+  // information in the FileDescriptorProtos. If include_json_name is true,
+  // populate the json_name field of FieldDescriptorProto for all fields.
+  void GetTransitiveDependencies(
+      const FileDescriptor* file,
+      absl::flat_hash_set<const FileDescriptor*>* already_seen,
+      RepeatedPtrField<FileDescriptorProto>* output,
+      const TransitiveDependencyOptions& options =
+          TransitiveDependencyOptions());
+
   // -----------------------------------------------------------------
 
   // The name of the executable as invoked (i.e. argv[0]).
@@ -344,16 +362,19 @@ class PROTOC_EXPORT CommandLineInterface {
     CodeGenerator* generator;
     std::string help_text;
   };
-  typedef std::map<std::string, GeneratorInfo> GeneratorMap;
-  GeneratorMap generators_by_flag_name_;
-  GeneratorMap generators_by_option_name_;
+
+  const GeneratorInfo* FindGeneratorByFlag(const std::string& name) const;
+  const GeneratorInfo* FindGeneratorByOption(const std::string& option) const;
+
+  absl::btree_map<std::string, GeneratorInfo> generators_by_flag_name_;
+  absl::flat_hash_map<std::string, GeneratorInfo> generators_by_option_name_;
   // A map from generator names to the parameters specified using the option
   // flag. For example, if the user invokes the compiler with:
   //   protoc --foo_out=outputdir --foo_opt=enable_bar ...
   // Then there will be an entry ("--foo_out", "enable_bar") in this map.
-  std::map<std::string, std::string> generator_parameters_;
+  absl::flat_hash_map<std::string, std::string> generator_parameters_;
   // Similar to generator_parameters_, but stores the parameters for plugins.
-  std::map<std::string, std::string> plugin_parameters_;
+  absl::flat_hash_map<std::string, std::string> plugin_parameters_;
 
   // See AllowPlugins().  If this is empty, plugins aren't allowed.
   std::string plugin_prefix_;
@@ -361,7 +382,7 @@ class PROTOC_EXPORT CommandLineInterface {
   // Maps specific plugin names to files.  When executing a plugin, this map
   // is searched first to find the plugin executable.  If not found here, the
   // PATH (or other OS-specific search strategy) is searched.
-  std::map<std::string, std::string> plugins_;
+  absl::flat_hash_map<std::string, std::string> plugins_;
 
   // Stuff parsed from command line.
   enum Mode {
@@ -371,30 +392,33 @@ class PROTOC_EXPORT CommandLineInterface {
     MODE_PRINT,    // Print mode: print info of the given .proto files and exit.
   };
 
-  Mode mode_;
+  Mode mode_ = MODE_COMPILE;
 
   enum PrintMode {
     PRINT_NONE,         // Not in MODE_PRINT
     PRINT_FREE_FIELDS,  // --print_free_fields
   };
 
-  PrintMode print_mode_;
+  PrintMode print_mode_ = PRINT_NONE;
 
   enum ErrorFormat {
     ERROR_FORMAT_GCC,  // GCC error output format (default).
     ERROR_FORMAT_MSVS  // Visual Studio output (--error_format=msvs).
   };
 
-  ErrorFormat error_format_;
+  ErrorFormat error_format_ = ERROR_FORMAT_GCC;
 
-  std::vector<std::pair<std::string, std::string> >
+  // True if we should treat warnings as errors that fail the compilation.
+  bool fatal_warnings_ = false;
+
+  std::vector<std::pair<std::string, std::string>>
       proto_path_;                        // Search path for proto files.
   std::vector<std::string> input_files_;  // Names of the input proto files.
 
   // Names of proto files which are allowed to be imported. Used by build
   // systems to enforce depend-on-what-you-import.
-  std::set<std::string> direct_dependencies_;
-  bool direct_dependencies_explicitly_set_;
+  absl::flat_hash_set<std::string> direct_dependencies_;
+  bool direct_dependencies_explicitly_set_ = false;
 
   // If there's a violation of depend-on-what-you-import, this string will be
   // presented to the user. "%s" will be replaced with the violating import.
@@ -426,6 +450,8 @@ class PROTOC_EXPORT CommandLineInterface {
   // dependency file will be written. Otherwise, empty.
   std::string dependency_out_name_;
 
+  bool experimental_editions_ = false;
+
   // True if --include_imports was given, meaning that we should
   // write all transitive dependencies to the DescriptorSet.  Otherwise, only
   // the .proto files listed on the command-line are added.
@@ -433,18 +459,24 @@ class PROTOC_EXPORT CommandLineInterface {
 
   // True if --include_source_info was given, meaning that we should not strip
   // SourceCodeInfo from the DescriptorSet.
-  bool source_info_in_descriptor_set_;
+  bool source_info_in_descriptor_set_ = false;
+
+  // True if --retain_options was given, meaning that we shouldn't strip any
+  // options from the DescriptorSet, even if they have RETENTION_SOURCE
+  // specified.
+  bool retain_options_in_descriptor_set_ = false;
 
   // Was the --disallow_services flag used?
-  bool disallow_services_;
+  bool disallow_services_ = false;
 
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(CommandLineInterface);
+  // When using --encode, this will be passed to SetSerializationDeterministic.
+  bool deterministic_output_ = false;
 };
 
 }  // namespace compiler
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_COMPILER_COMMAND_LINE_INTERFACE_H__

@@ -1,4 +1,36 @@
-﻿using Google.Protobuf.TestProtos.Proto2;
+#region Copyright notice and license
+// Protocol Buffers - Google's data interchange format
+// Copyright 2015 Google Inc.  All rights reserved.
+// https://developers.google.com/protocol-buffers/
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+//     * Neither the name of Google Inc. nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#endregion
+
+using Google.Protobuf.TestProtos.Proto2;
 using Proto2 = Google.Protobuf.TestProtos.Proto2;
 using NUnit.Framework;
 
@@ -261,6 +293,18 @@ namespace Google.Protobuf
             Assert.True(message.IsInitialized());
         }
 
+        /// <summary>
+        /// Code was accidentally left in message parser that threw exceptions when missing required fields after parsing.
+        /// We've decided to not throw exceptions on missing fields, instead leaving it up to the consumer how they
+        /// want to check and handle missing fields.
+        /// </summary>
+        [Test]
+        public void RequiredFieldsNoThrow()
+        {
+            Assert.DoesNotThrow(() => MessageParsingHelpers.AssertReadingMessage(TestRequired.Parser, new byte[0], m => { }));
+            Assert.DoesNotThrow(() => MessageParsingHelpers.AssertReadingMessage(TestRequired.Parser as MessageParser, new byte[0], m => { }));
+        }
+
         [Test]
         public void RequiredFieldsInExtensions()
         {
@@ -332,9 +376,9 @@ namespace Google.Protobuf
                 }
             };
 
-            byte[] bytes = message.ToByteArray();
-            TestAllTypes parsed = Proto2.TestAllTypes.Parser.ParseFrom(bytes);
-            Assert.AreEqual(message, parsed);
+            MessageParsingHelpers.AssertWritingMessage(message);
+
+            MessageParsingHelpers.AssertRoundtrip(Proto2.TestAllTypes.Parser, message);
         }
 
         [Test]
@@ -349,9 +393,11 @@ namespace Google.Protobuf
                 new RepeatedGroup_extension { A = 30 }
             });
 
-            byte[] bytes = message.ToByteArray();
-            TestAllExtensions extendable_parsed = TestAllExtensions.Parser.WithExtensionRegistry(new ExtensionRegistry() { UnittestExtensions.OptionalGroupExtension, UnittestExtensions.RepeatedGroupExtension }).ParseFrom(bytes);
-            Assert.AreEqual(message, extendable_parsed);
+            MessageParsingHelpers.AssertWritingMessage(message);
+
+            MessageParsingHelpers.AssertRoundtrip(
+                TestAllExtensions.Parser.WithExtensionRegistry(new ExtensionRegistry() { UnittestExtensions.OptionalGroupExtension, UnittestExtensions.RepeatedGroupExtension }),
+                message);
         }
 
         [Test]
@@ -360,9 +406,22 @@ namespace Google.Protobuf
             var message = new TestGroupExtension();
             message.SetExtension(TestNestedExtension.Extensions.OptionalGroupExtension, new TestNestedExtension.Types.OptionalGroup_extension { A = 10 });
 
+            MessageParsingHelpers.AssertWritingMessage(message);
+            
+            MessageParsingHelpers.AssertRoundtrip(
+                TestGroupExtension.Parser.WithExtensionRegistry(new ExtensionRegistry() { TestNestedExtension.Extensions.OptionalGroupExtension }),
+                message);
+        }
+
+        [Test]
+        public void RoundTrip_ParseUsingCodedInput()
+        {
+            var message = new TestAllExtensions();
+            message.SetExtension(UnittestExtensions.OptionalBoolExtension, true);
             byte[] bytes = message.ToByteArray();
-            TestGroupExtension extendable_parsed = TestGroupExtension.Parser.WithExtensionRegistry(new ExtensionRegistry() { TestNestedExtension.Extensions.OptionalGroupExtension }).ParseFrom(bytes);
-            Assert.AreEqual(message, extendable_parsed);
+            using CodedInputStream input = new CodedInputStream(bytes);
+            var parsed = TestAllExtensions.Parser.WithExtensionRegistry(new ExtensionRegistry() { UnittestExtensions.OptionalBoolExtension }).ParseFrom(input);
+            Assert.AreEqual(message, parsed);
         }
     }
 }

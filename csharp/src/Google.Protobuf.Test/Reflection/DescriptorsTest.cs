@@ -32,9 +32,11 @@
 
 using Google.Protobuf.TestProtos;
 using NUnit.Framework;
+using ProtobufUnittest;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnitTest.Issues.TestProtos;
 
 namespace Google.Protobuf.Reflection
 {
@@ -69,13 +71,31 @@ namespace Google.Protobuf.Reflection
             TestFileDescriptor(converted[2], converted[1], converted[0]);
         }
 
+        [Test]
+        public void FileDescriptor_BuildFromByteStrings_WithExtensionRegistry()
+        {
+            var extension = UnittestCustomOptionsProto3Extensions.MessageOpt1;
+
+            var byteStrings = new[]
+            {
+                DescriptorReflection.Descriptor.Proto.ToByteString(),
+                UnittestCustomOptionsProto3Reflection.Descriptor.Proto.ToByteString()
+            };
+            var registry = new ExtensionRegistry { extension };
+
+            var descriptor = FileDescriptor.BuildFromByteStrings(byteStrings, registry).Last();
+            var message = descriptor.MessageTypes.Single(t => t.Name == nameof(TestMessageWithCustomOptions));
+            var extensionValue = message.GetOptions().GetExtension(extension);
+            Assert.AreEqual(-56, extensionValue);
+        }
+
         private void TestFileDescriptor(FileDescriptor file, FileDescriptor importedFile, FileDescriptor importedPublicFile)
         {
-            Assert.AreEqual("unittest_proto3.proto", file.Name);
+            Assert.AreEqual("csharp/protos/unittest_proto3.proto", file.Name);
             Assert.AreEqual("protobuf_unittest3", file.Package);
 
             Assert.AreEqual("UnittestProto", file.Proto.Options.JavaOuterClassname);
-            Assert.AreEqual("unittest_proto3.proto", file.Proto.Name);
+            Assert.AreEqual("csharp/protos/unittest_proto3.proto", file.Proto.Name);
 
             // unittest_proto3.proto doesn't have any public imports, but unittest_import_proto3.proto does.
             Assert.AreEqual(0, file.PublicDependencies.Count);
@@ -103,16 +123,7 @@ namespace Google.Protobuf.Reflection
             }
 
             Assert.AreEqual(10, file.SerializedData[0]);
-        }
-
-        [Test]
-        public void FileDescriptor_NonRootPath()
-        {
-            // unittest_proto3.proto used to be in google/protobuf. Now it's in the C#-specific location,
-            // let's test something that's still in a directory.
-            FileDescriptor file = UnittestWellKnownTypesReflection.Descriptor;
-            Assert.AreEqual("google/protobuf/unittest_well_known_types.proto", file.Name);
-            Assert.AreEqual("protobuf_unittest", file.Package);
+            TestDescriptorToProto(file.ToProto, file.Proto);
         }
 
         [Test]
@@ -210,6 +221,7 @@ namespace Google.Protobuf.Reflection
             {
                 Assert.AreEqual(i, messageType.EnumTypes[i].Index);
             }
+            TestDescriptorToProto(messageType.ToProto, messageType.Proto);
         }
 
         [Test]
@@ -247,6 +259,7 @@ namespace Google.Protobuf.Reflection
             FieldDescriptor enumField = testAllTypesDescriptor.FindDescriptor<FieldDescriptor>("single_nested_enum");
             FieldDescriptor foreignMessageField = testAllTypesDescriptor.FindDescriptor<FieldDescriptor>("single_foreign_message");
             FieldDescriptor importMessageField = testAllTypesDescriptor.FindDescriptor<FieldDescriptor>("single_import_message");
+            FieldDescriptor fieldInOneof = testAllTypesDescriptor.FindDescriptor<FieldDescriptor>("oneof_string");
 
             Assert.AreEqual("single_int32", primitiveField.Name);
             Assert.AreEqual("protobuf_unittest3.TestAllTypes.single_int32",
@@ -268,6 +281,15 @@ namespace Google.Protobuf.Reflection
             Assert.AreEqual("single_import_message", importMessageField.Name);
             Assert.AreEqual(FieldType.Message, importMessageField.FieldType);
             Assert.AreEqual(importMessageDescriptor, importMessageField.MessageType);
+
+            // For a field in a regular onoef, ContainingOneof and RealContainingOneof should be the same.
+            Assert.AreEqual("oneof_field", fieldInOneof.ContainingOneof.Name);
+            Assert.AreSame(fieldInOneof.ContainingOneof, fieldInOneof.RealContainingOneof);
+
+            TestDescriptorToProto(primitiveField.ToProto, primitiveField.Proto);
+            TestDescriptorToProto(enumField.ToProto, enumField.Proto);
+            TestDescriptorToProto(foreignMessageField.ToProto, foreignMessageField.Proto);
+            TestDescriptorToProto(fieldInOneof.ToProto, fieldInOneof.Proto);
         }
 
         [Test]
@@ -312,12 +334,15 @@ namespace Google.Protobuf.Reflection
             {
                 Assert.AreEqual(i, enumType.Values[i].Index);
             }
+            TestDescriptorToProto(enumType.ToProto, enumType.Proto);
+            TestDescriptorToProto(nestedType.ToProto, nestedType.Proto);
         }
 
         [Test]
         public void OneofDescriptor()
         {
             OneofDescriptor descriptor = TestAllTypes.Descriptor.FindDescriptor<OneofDescriptor>("oneof_field");
+            Assert.IsFalse(descriptor.IsSynthetic);
             Assert.AreEqual("oneof_field", descriptor.Name);
             Assert.AreEqual("protobuf_unittest3.TestAllTypes.oneof_field", descriptor.FullName);
 
@@ -334,6 +359,7 @@ namespace Google.Protobuf.Reflection
             }
 
             CollectionAssert.AreEquivalent(expectedFields, descriptor.Fields);
+            TestDescriptorToProto(descriptor.ToProto, descriptor.Proto);
         }
 
         [Test]
@@ -343,6 +369,7 @@ namespace Google.Protobuf.Reflection
             Assert.IsNull(descriptor.Parser);
             Assert.IsNull(descriptor.ClrType);
             Assert.IsNull(descriptor.Fields[1].Accessor);
+            TestDescriptorToProto(descriptor.ToProto, descriptor.Proto);
         }
 
         // From TestFieldOrdering:
@@ -364,11 +391,17 @@ namespace Google.Protobuf.Reflection
         {
             var descriptor = Google.Protobuf.Reflection.FileDescriptor.DescriptorProtoFileDescriptor;
             Assert.AreEqual("google/protobuf/descriptor.proto", descriptor.Name);
+            TestDescriptorToProto(descriptor.ToProto, descriptor.Proto);
         }
 
         [Test]
         public void DescriptorImportingExtensionsFromOldCodeGen()
         {
+            if (MethodOptions.Descriptor.FullName != "google.protobuf.MethodOptions")
+            {
+                Assert.Ignore("Embedded descriptor for OldExtensions expects google.protobuf reflection package.");
+            }
+
             // The extension collection includes a null extension. There's not a lot we can do about that
             // in itself, as the old generator didn't provide us the extension information.
             var extensions = TestProtos.OldGenerator.OldExtensions2Reflection.Descriptor.Extensions;
@@ -382,6 +415,78 @@ namespace Google.Protobuf.Reflection
             // an execution-time failure.
             var importingDescriptor = TestProtos.OldGenerator.OldExtensions1Reflection.Descriptor;
             Assert.NotNull(importingDescriptor);
+        }
+
+        [Test]
+        public void Proto3OptionalDescriptors()
+        {
+            var descriptor = TestProto3Optional.Descriptor;
+            var field = descriptor.Fields[TestProto3Optional.OptionalInt32FieldNumber];
+            Assert.NotNull(field.ContainingOneof);
+            Assert.IsTrue(field.ContainingOneof.IsSynthetic);
+            Assert.Null(field.RealContainingOneof);
+        }
+
+
+        [Test]
+        public void SyntheticOneofReflection()
+        {
+            // Expect every oneof in TestProto3Optional to be synthetic
+            var proto3OptionalDescriptor = TestProto3Optional.Descriptor;
+            Assert.AreEqual(0, proto3OptionalDescriptor.RealOneofCount);
+            foreach (var oneof in proto3OptionalDescriptor.Oneofs)
+            {
+                Assert.True(oneof.IsSynthetic);
+            }
+
+            // Expect no oneof in the original proto3 unit test file to be synthetic.
+            // (This excludes oneofs with "lazy" in the name, due to internal differences.)
+            foreach (var descriptor in ProtobufTestMessages.Proto3.TestMessagesProto3Reflection.Descriptor.MessageTypes)
+            {
+                var nonLazyOneofs = descriptor.Oneofs.Where(d => !d.Name.Contains("lazy")).ToList();
+                Assert.AreEqual(nonLazyOneofs.Count, descriptor.RealOneofCount);
+                foreach (var oneof in nonLazyOneofs)
+                {
+                    Assert.False(oneof.IsSynthetic);
+                }
+            }
+
+            // Expect no oneof in the original proto2 unit test file to be synthetic.
+            foreach (var descriptor in ProtobufTestMessages.Proto2.TestMessagesProto2Reflection.Descriptor.MessageTypes)
+            {
+                Assert.AreEqual(descriptor.Oneofs.Count, descriptor.RealOneofCount);
+                foreach (var oneof in descriptor.Oneofs)
+                {
+                    Assert.False(oneof.IsSynthetic);
+                }
+            }
+        }
+
+        [Test]
+        public void OptionRetention()
+        {
+          var proto = UnittestRetentionReflection.Descriptor.Proto;
+          Assert.AreEqual(1, proto.Options.GetExtension(
+              UnittestRetentionExtensions.PlainOption));
+          Assert.AreEqual(2, proto.Options.GetExtension(
+              UnittestRetentionExtensions.RuntimeRetentionOption));
+          // This option has a value of 3 in the .proto file, but we expect it
+          // to be zeroed out in the generated descriptor since it has source
+          // retention.
+          Assert.AreEqual(0, proto.Options.GetExtension(
+              UnittestRetentionExtensions.SourceRetentionOption));
+        }
+
+        private static void TestDescriptorToProto(Func<IMessage> toProtoFunction, IMessage expectedProto)
+        {
+            var clone1 = toProtoFunction();
+            var clone2 = toProtoFunction();
+            Assert.AreNotSame(clone1, clone2);
+            Assert.AreNotSame(clone1, expectedProto);
+            Assert.AreNotSame(clone2, expectedProto);
+
+            Assert.AreEqual(clone1, clone2);
+            Assert.AreEqual(clone1, expectedProto);
         }
     }
 }

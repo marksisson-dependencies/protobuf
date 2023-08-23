@@ -45,10 +45,7 @@ import java.util.RandomAccess;
 final class DoubleArrayList extends AbstractProtobufList<Double>
     implements DoubleList, RandomAccess, PrimitiveNonBoxingCollection {
 
-  private static final DoubleArrayList EMPTY_LIST = new DoubleArrayList(new double[0], 0);
-  static {
-    EMPTY_LIST.makeImmutable();
-  }
+  private static final DoubleArrayList EMPTY_LIST = new DoubleArrayList(new double[0], 0, false);
 
   public static DoubleArrayList emptyList() {
     return EMPTY_LIST;
@@ -65,14 +62,15 @@ final class DoubleArrayList extends AbstractProtobufList<Double>
 
   /** Constructs a new mutable {@code DoubleArrayList} with default capacity. */
   DoubleArrayList() {
-    this(new double[DEFAULT_CAPACITY], 0);
+    this(new double[DEFAULT_CAPACITY], 0, true);
   }
 
   /**
    * Constructs a new mutable {@code DoubleArrayList} containing the same elements as {@code other}.
    */
-  private DoubleArrayList(double[] other, int size) {
-    array = other;
+  private DoubleArrayList(double[] other, int size, boolean isMutable) {
+    super(isMutable);
+    this.array = other;
     this.size = size;
   }
 
@@ -126,7 +124,7 @@ final class DoubleArrayList extends AbstractProtobufList<Double>
     if (capacity < size) {
       throw new IllegalArgumentException();
     }
-    return new DoubleArrayList(Arrays.copyOf(array, capacity), size);
+    return new DoubleArrayList(Arrays.copyOf(array, capacity), size, true);
   }
 
   @Override
@@ -138,6 +136,26 @@ final class DoubleArrayList extends AbstractProtobufList<Double>
   public double getDouble(int index) {
     ensureIndexInRange(index);
     return array[index];
+  }
+
+  @Override
+  public int indexOf(Object element) {
+    if (!(element instanceof Double)) {
+      return -1;
+    }
+    double unboxedElement = (Double) element;
+    int numElems = size();
+    for (int i = 0; i < numElems; i++) {
+      if (array[i] == unboxedElement) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  @Override
+  public boolean contains(Object element) {
+    return indexOf(element) != -1;
   }
 
   @Override
@@ -245,20 +263,6 @@ final class DoubleArrayList extends AbstractProtobufList<Double>
     size = newSize;
     modCount++;
     return true;
-  }
-
-  @Override
-  public boolean remove(Object o) {
-    ensureIsMutable();
-    for (int i = 0; i < size; i++) {
-      if (o.equals(array[i])) {
-        System.arraycopy(array, i + 1, array, i, size - i - 1);
-        size--;
-        modCount++;
-        return true;
-      }
-    }
-    return false;
   }
 
   @Override

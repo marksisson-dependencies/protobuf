@@ -109,7 +109,7 @@ final class NioByteString extends ByteString.LeafByteString {
   protected void copyToInternal(
       byte[] target, int sourceOffset, int targetOffset, int numberToCopy) {
     ByteBuffer slice = buffer.slice();
-    slice.position(sourceOffset);
+    Java8Compatibility.position(slice, sourceOffset);
     slice.get(target, targetOffset, numberToCopy);
   }
 
@@ -223,7 +223,7 @@ final class NioByteString extends ByteString.LeafByteString {
 
       @Override
       public void mark(int readlimit) {
-        buf.mark();
+        Java8Compatibility.mark(buf);
       }
 
       @Override
@@ -234,7 +234,7 @@ final class NioByteString extends ByteString.LeafByteString {
       @Override
       public void reset() throws IOException {
         try {
-          buf.reset();
+          Java8Compatibility.reset(buf);
         } catch (InvalidMarkException e) {
           throw new IOException(e);
         }
@@ -285,8 +285,8 @@ final class NioByteString extends ByteString.LeafByteString {
     }
 
     ByteBuffer slice = buffer.slice();
-    slice.position(beginIndex - buffer.position());
-    slice.limit(endIndex - buffer.position());
+    Java8Compatibility.position(slice, beginIndex - buffer.position());
+    Java8Compatibility.limit(slice, endIndex - buffer.position());
     return slice;
   }
 }

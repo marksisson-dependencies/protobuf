@@ -45,10 +45,7 @@ import java.util.RandomAccess;
 final class BooleanArrayList extends AbstractProtobufList<Boolean>
     implements BooleanList, RandomAccess, PrimitiveNonBoxingCollection {
 
-  private static final BooleanArrayList EMPTY_LIST = new BooleanArrayList(new boolean[0], 0);
-  static {
-    EMPTY_LIST.makeImmutable();
-  }
+  private static final BooleanArrayList EMPTY_LIST = new BooleanArrayList(new boolean[0], 0, false);
 
   public static BooleanArrayList emptyList() {
     return EMPTY_LIST;
@@ -65,15 +62,16 @@ final class BooleanArrayList extends AbstractProtobufList<Boolean>
 
   /** Constructs a new mutable {@code BooleanArrayList} with default capacity. */
   BooleanArrayList() {
-    this(new boolean[DEFAULT_CAPACITY], 0);
+    this(new boolean[DEFAULT_CAPACITY], 0, true);
   }
 
   /**
    * Constructs a new mutable {@code BooleanArrayList} containing the same elements as {@code
    * other}.
    */
-  private BooleanArrayList(boolean[] other, int size) {
-    array = other;
+  private BooleanArrayList(boolean[] other, int size, boolean isMutable) {
+    super(isMutable);
+    this.array = other;
     this.size = size;
   }
 
@@ -126,7 +124,7 @@ final class BooleanArrayList extends AbstractProtobufList<Boolean>
     if (capacity < size) {
       throw new IllegalArgumentException();
     }
-    return new BooleanArrayList(Arrays.copyOf(array, capacity), size);
+    return new BooleanArrayList(Arrays.copyOf(array, capacity), size, true);
   }
 
   @Override
@@ -138,6 +136,26 @@ final class BooleanArrayList extends AbstractProtobufList<Boolean>
   public boolean getBoolean(int index) {
     ensureIndexInRange(index);
     return array[index];
+  }
+
+  @Override
+  public int indexOf(Object element) {
+    if (!(element instanceof Boolean)) {
+      return -1;
+    }
+    boolean unboxedElement = (Boolean) element;
+    int numElems = size();
+    for (int i = 0; i < numElems; i++) {
+      if (array[i] == unboxedElement) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  @Override
+  public boolean contains(Object element) {
+    return indexOf(element) != -1;
   }
 
   @Override
@@ -245,20 +263,6 @@ final class BooleanArrayList extends AbstractProtobufList<Boolean>
     size = newSize;
     modCount++;
     return true;
-  }
-
-  @Override
-  public boolean remove(Object o) {
-    ensureIsMutable();
-    for (int i = 0; i < size; i++) {
-      if (o.equals(array[i])) {
-        System.arraycopy(array, i + 1, array, i, size - i - 1);
-        size--;
-        modCount++;
-        return true;
-      }
-    }
-    return false;
   }
 
   @Override
