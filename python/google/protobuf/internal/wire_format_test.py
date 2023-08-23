@@ -1,5 +1,3 @@
-#! /usr/bin/python
-#
 # Protocol Buffers - Google's data interchange format
 # Copyright 2008 Google Inc.  All rights reserved.
 # https://developers.google.com/protocol-buffers/
@@ -34,12 +32,13 @@
 
 __author__ = 'robinson@google.com (Will Robinson)'
 
-from google.apputils import basetest
+import unittest
+
 from google.protobuf import message
 from google.protobuf.internal import wire_format
 
 
-class WireFormatTest(basetest.TestCase):
+class WireFormatTest(unittest.TestCase):
 
   def testPackTag(self):
     field_number = 0xabc
@@ -250,4 +249,4 @@ class WireFormatTest(basetest.TestCase):
 
 
 if __name__ == '__main__':
-  basetest.main()
+  unittest.main()

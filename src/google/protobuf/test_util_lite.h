@@ -35,7 +35,7 @@
 #ifndef GOOGLE_PROTOBUF_TEST_UTIL_LITE_H__
 #define GOOGLE_PROTOBUF_TEST_UTIL_LITE_H__
 
-#include <google/protobuf/unittest_lite.pb.h>
+#include "google/protobuf/unittest_lite.pb.h"
 
 namespace google {
 namespace protobuf {
@@ -45,6 +45,8 @@ namespace unittest_import = protobuf_unittest_import;
 
 class TestUtilLite {
  public:
+  TestUtilLite() = delete;
+
   // Set every field in the message to a unique value.
   static void SetAllFields(unittest::TestAllTypesLite* message);
   static void SetAllExtensions(unittest::TestAllExtensionsLite* message);
@@ -52,7 +54,7 @@ class TestUtilLite {
   static void SetPackedExtensions(unittest::TestPackedExtensionsLite* message);
 
   // Use the repeated versions of the set_*() accessors to modify all the
-  // repeated fields of the messsage (which should already have been
+  // repeated fields of the message (which should already have been
   // initialized with Set*Fields()).  Set*Fields() itself only tests
   // the add_*() accessors.
   static void ModifyRepeatedFields(unittest::TestAllTypesLite* message);
@@ -90,12 +92,9 @@ class TestUtilLite {
   static void ExpectPackedClear(const unittest::TestPackedTypesLite& message);
   static void ExpectPackedExtensionsClear(
       const unittest::TestPackedExtensionsLite& message);
-
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(TestUtilLite);
 };
 
 }  // namespace protobuf
-
 }  // namespace google
+
 #endif  // GOOGLE_PROTOBUF_TEST_UTIL_LITE_H__

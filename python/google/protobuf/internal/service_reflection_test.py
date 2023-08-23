@@ -1,5 +1,3 @@
-#! /usr/bin/python
-#
 # Protocol Buffers - Google's data interchange format
 # Copyright 2008 Google Inc.  All rights reserved.
 # https://developers.google.com/protocol-buffers/
@@ -34,13 +32,15 @@
 
 __author__ = 'petar@google.com (Petar Petrov)'
 
-from google.apputils import basetest
-from google.protobuf import unittest_pb2
+
+import unittest
+
 from google.protobuf import service_reflection
 from google.protobuf import service
+from google.protobuf import unittest_pb2
 
 
-class FooUnitTest(basetest.TestCase):
+class FooUnitTest(unittest.TestCase):
 
   def testService(self):
     class MockRpcChannel(service.RpcChannel):
@@ -77,10 +77,14 @@ class FooUnitTest(basetest.TestCase):
     service_descriptor = unittest_pb2.TestService.GetDescriptor()
     srvc.CallMethod(service_descriptor.methods[1], rpc_controller,
                     unittest_pb2.BarRequest(), MyCallback)
+    self.assertTrue(srvc.GetRequestClass(service_descriptor.methods[1]) is
+                    unittest_pb2.BarRequest)
+    self.assertTrue(srvc.GetResponseClass(service_descriptor.methods[1]) is
+                    unittest_pb2.BarResponse)
     self.assertEqual('Method Bar not implemented.',
                      rpc_controller.failure_message)
     self.assertEqual(None, self.callback_response)
-    
+
     class MyServiceImpl(unittest_pb2.TestService):
       def Foo(self, rpc_controller, request, done):
         self.foo_called = True
@@ -125,12 +129,11 @@ class FooUnitTest(basetest.TestCase):
     # Invoke method.
     stub.Foo(rpc_controller, request, MyCallback)
 
-    self.assertTrue(isinstance(self.callback_response,
-                               unittest_pb2.FooResponse))
+    self.assertIsInstance(self.callback_response, unittest_pb2.FooResponse)
     self.assertEqual(request, channel.request)
     self.assertEqual(rpc_controller, channel.controller)
     self.assertEqual(stub.GetDescriptor().methods[0], channel.method)
 
 
 if __name__ == '__main__':
-  basetest.main()
+  unittest.main()

@@ -33,9 +33,10 @@
 #ifndef GOOGLE_PROTOBUF_PYTHON_CPP_DESCRIPTOR_H__
 #define GOOGLE_PROTOBUF_PYTHON_CPP_DESCRIPTOR_H__
 
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <google/protobuf/descriptor.h>
+#include "google/protobuf/descriptor.h"
 
 namespace google {
 namespace protobuf {
@@ -47,28 +48,40 @@ extern PyTypeObject PyEnumDescriptor_Type;
 extern PyTypeObject PyEnumValueDescriptor_Type;
 extern PyTypeObject PyFileDescriptor_Type;
 extern PyTypeObject PyOneofDescriptor_Type;
+extern PyTypeObject PyServiceDescriptor_Type;
+extern PyTypeObject PyMethodDescriptor_Type;
 
-// Return a new reference to a Descriptor object.
+// Wraps a Descriptor in a Python object.
 // The C++ pointer is usually borrowed from the global DescriptorPool.
 // In any case, it must stay alive as long as the Python object.
-PyObject* PyMessageDescriptor_New(const Descriptor* descriptor);
-PyObject* PyFieldDescriptor_New(const FieldDescriptor* descriptor);
-PyObject* PyEnumDescriptor_New(const EnumDescriptor* descriptor);
-PyObject* PyEnumValueDescriptor_New(const EnumValueDescriptor* descriptor);
-PyObject* PyOneofDescriptor_New(const OneofDescriptor* descriptor);
-PyObject* PyFileDescriptor_New(const FileDescriptor* file_descriptor);
+// Returns a new reference.
+PyObject* PyMessageDescriptor_FromDescriptor(const Descriptor* descriptor);
+PyObject* PyFieldDescriptor_FromDescriptor(const FieldDescriptor* descriptor);
+PyObject* PyEnumDescriptor_FromDescriptor(const EnumDescriptor* descriptor);
+PyObject* PyEnumValueDescriptor_FromDescriptor(
+    const EnumValueDescriptor* descriptor);
+PyObject* PyOneofDescriptor_FromDescriptor(const OneofDescriptor* descriptor);
+PyObject* PyFileDescriptor_FromDescriptor(
+    const FileDescriptor* file_descriptor);
+PyObject* PyServiceDescriptor_FromDescriptor(
+    const ServiceDescriptor* descriptor);
+PyObject* PyMethodDescriptor_FromDescriptor(
+    const MethodDescriptor* descriptor);
 
 // Alternate constructor of PyFileDescriptor, used when we already have a
 // serialized FileDescriptorProto that can be cached.
 // Returns a new reference.
-PyObject* PyFileDescriptor_NewWithPb(const FileDescriptor* file_descriptor,
-                                     PyObject* serialized_pb);
+PyObject* PyFileDescriptor_FromDescriptorWithSerializedPb(
+    const FileDescriptor* file_descriptor, PyObject* serialized_pb);
 
 // Return the C++ descriptor pointer.
 // This function checks the parameter type; on error, return NULL with a Python
 // exception set.
 const Descriptor* PyMessageDescriptor_AsDescriptor(PyObject* obj);
 const FieldDescriptor* PyFieldDescriptor_AsDescriptor(PyObject* obj);
+const EnumDescriptor* PyEnumDescriptor_AsDescriptor(PyObject* obj);
+const FileDescriptor* PyFileDescriptor_AsDescriptor(PyObject* obj);
+const ServiceDescriptor* PyServiceDescriptor_AsDescriptor(PyObject* obj);
 
 // Returns the raw C++ pointer.
 const void* PyDescriptor_AsVoidPtr(PyObject* obj);
@@ -87,6 +100,6 @@ bool InitDescriptor();
 
 }  // namespace python
 }  // namespace protobuf
-
 }  // namespace google
+
 #endif  // GOOGLE_PROTOBUF_PYTHON_CPP_DESCRIPTOR_H__

@@ -32,247 +32,180 @@
 #define GOOGLE_PROTOBUF_MAP_FIELD_INL_H__
 
 #include <memory>
-#ifndef _SHARED_PTR_H
-#include <google/protobuf/stubs/shared_ptr.h>
-#endif
+#include <string>
+#include <tuple>
+#include <type_traits>
 
-#include <google/protobuf/map_field.h>
-#include <google/protobuf/map_type_handler.h>
+#include "absl/base/casts.h"
+#include "google/protobuf/map.h"
+#include "google/protobuf/map_field.h"
+#include "google/protobuf/map_type_handler.h"
+#include "google/protobuf/port.h"
+
+// must be last
+#include "google/protobuf/port_def.inc"
+
+#ifdef SWIG
+#error "You cannot SWIG proto headers"
+#endif
 
 namespace google {
 namespace protobuf {
 namespace internal {
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::MapField()
-    : default_entry_(NULL) {
-  MapFieldBase::base_map_ = new Map<Key, T>;
-  SetDefaultEnumValue();
+// UnwrapMapKey template
+template <typename T>
+T UnwrapMapKey(const MapKey& map_key);
+template <>
+inline int32_t UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetInt32Value();
+}
+template <>
+inline uint32_t UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetUInt32Value();
+}
+template <>
+inline int64_t UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetInt64Value();
+}
+template <>
+inline uint64_t UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetUInt64Value();
+}
+template <>
+inline bool UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetBoolValue();
+}
+template <>
+inline std::string UnwrapMapKey(const MapKey& map_key) {
+  return map_key.GetStringValue();
+}
+template <>
+inline MapKey UnwrapMapKey(const MapKey& map_key) {
+  return map_key;
 }
 
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::MapField(
-    const Message* default_entry)
-    : default_entry_(down_cast<const EntryType*>(default_entry)) {
-  MapFieldBase::base_map_ = new Map<Key, T>;
-  SetDefaultEnumValue();
+// SetMapKey
+inline void SetMapKey(MapKey* map_key, int32_t value) {
+  map_key->SetInt32Value(value);
+}
+inline void SetMapKey(MapKey* map_key, uint32_t value) {
+  map_key->SetUInt32Value(value);
+}
+inline void SetMapKey(MapKey* map_key, int64_t value) {
+  map_key->SetInt64Value(value);
+}
+inline void SetMapKey(MapKey* map_key, uint64_t value) {
+  map_key->SetUInt64Value(value);
+}
+inline void SetMapKey(MapKey* map_key, bool value) {
+  map_key->SetBoolValue(value);
+}
+inline void SetMapKey(MapKey* map_key, const std::string& value) {
+  map_key->SetStringValue(value);
+}
+inline void SetMapKey(MapKey* map_key, const MapKey& value) {
+  map_key->CopyFrom(value);
 }
 
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::~MapField() {
-  delete reinterpret_cast<Map<Key, T>*>(MapFieldBase::base_map_);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-int MapField<Key, T, KeyProto, ValueProto, default_enum_value>::size() const {
-  SyncMapWithRepeatedField();
-  return GetInternalMap().size();
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto, default_enum_value>::Clear() {
-  SyncMapWithRepeatedField();
-  MutableInternalMap()->clear();
-  SetMapDirty();
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-const Map<Key, T>&
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::GetMap() const {
-  SyncMapWithRepeatedField();
-  return GetInternalMap();
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-Map<Key, T>*
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::MutableMap() {
-  SyncMapWithRepeatedField();
-  Map<Key, T>* result = MutableInternalMap();
-  SetMapDirty();
-  return result;
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto, default_enum_value>::MergeFrom(
-    const MapField& other) {
-  SyncMapWithRepeatedField();
-  other.SyncMapWithRepeatedField();
-
-  Map<Key, T>* map = MutableInternalMap();
-  const Map<Key, T>& other_map = other.GetInternalMap();
-  for (typename Map<Key, T>::const_iterator it = other_map.begin();
-       it != other_map.end(); ++it) {
-    (*map)[it->first] = it->second;
-  }
-  SetMapDirty();
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto, default_enum_value>::Swap(
-    MapField* other) {
-  std::swap(repeated_field_, other->repeated_field_);
-  std::swap(base_map_, other->base_map_);
-  std::swap(state_, other->state_);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::SetEntryDescriptor(
-    const Descriptor** descriptor) {
-  entry_descriptor_ = descriptor;
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void
-MapField<Key, T, KeyProto, ValueProto,
-         default_enum_value>::SetAssignDescriptorCallback(void (*callback)()) {
-  assign_descriptor_callback_ = callback;
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto,
-              default_enum_value>::SetDefaultEnumValue() {
-  MutableInternalMap()->SetDefaultEnumValue(default_enum_value);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapEntry<Key, T, KeyProto, ValueProto, default_enum_value>*
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::NewEntry() const {
-  // The MapEntry instance created here is only used in generated code for
-  // parsing. It doesn't have default instance, descriptor or reflection,
-  // because these are not needed in parsing and will prevent us from using it
-  // for parsing MessageLite.
-  return new EntryType();
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapEntry<Key, T, KeyProto, ValueProto, default_enum_value>*
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::NewEntryWrapper(
-    const Key& key, const T& t) const {
-  return EntryType::Wrap(key, t);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-MapEntry<Key, T, KeyProto, ValueProto, default_enum_value>*
-MapField<Key, T, KeyProto, ValueProto, default_enum_value>::NewEnumEntryWrapper(
-    const Key& key, const T t) const {
-  return EntryType::EnumWrap(key, t);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-const Map<Key, T>& MapField<Key, T, KeyProto, ValueProto,
-                            default_enum_value>::GetInternalMap() const {
-  return *reinterpret_cast<Map<Key, T>*>(MapFieldBase::base_map_);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-Map<Key, T>* MapField<Key, T, KeyProto, ValueProto,
-                      default_enum_value>::MutableInternalMap() {
-  return reinterpret_cast<Map<Key, T>*>(MapFieldBase::base_map_);
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto,
-              default_enum_value>::SyncRepeatedFieldWithMapNoLock() const {
-  if (repeated_field_ == NULL) {
-    repeated_field_ = new RepeatedPtrField<Message>();
-  }
-  const Map<Key, T>& map =
-      *static_cast<const Map<Key, T>*>(MapFieldBase::base_map_);
-  RepeatedPtrField<EntryType>* repeated_field =
-      reinterpret_cast<RepeatedPtrField<EntryType>*>(repeated_field_);
-
-  repeated_field->Clear();
-
-  for (typename Map<Key, T>::const_iterator it = map.begin();
-       it != map.end(); ++it) {
-    InitDefaultEntryOnce();
-    GOOGLE_CHECK(default_entry_ != NULL);
-    EntryType* new_entry = down_cast<EntryType*>(default_entry_->New());
-    repeated_field->AddAllocated(new_entry);
-    new_entry->set_key(it->first);
-    new_entry->set_value(it->second);
-  }
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto,
-              default_enum_value>::SyncMapWithRepeatedFieldNoLock() const {
-  Map<Key, T>* map = reinterpret_cast<Map<Key, T>*>(MapFieldBase::base_map_);
-  RepeatedPtrField<EntryType>* repeated_field =
-      reinterpret_cast<RepeatedPtrField<EntryType>*>(repeated_field_);
-  map->clear();
-  for (typename RepeatedPtrField<EntryType>::iterator it =
-           repeated_field->begin(); it != repeated_field->end(); ++it) {
-    // Cast is needed because Map's api and internal storage is different when
-    // value is enum. For enum, we cannot cast an int to enum. Thus, we have to
-    // copy value. For other types, they have same exposed api type and internal
-    // stored type. We should not introduce value copy for them. We achieve this
-    // by casting to value for enum while casting to reference for other types.
-    (*map)[it->key()] = static_cast<CastValueType>(it->value());
-  }
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-int MapField<Key, T, KeyProto, ValueProto,
-             default_enum_value>::SpaceUsedExcludingSelfNoLock() const {
-  int size = 0;
-  if (repeated_field_ != NULL) {
-    size += repeated_field_->SpaceUsedExcludingSelf();
-  }
-  Map<Key, T>* map = reinterpret_cast<Map<Key, T>*>(MapFieldBase::base_map_);
-  size += sizeof(*map);
-  for (typename Map<Key, T>::iterator it = map->begin();
-       it != map->end(); ++it) {
-    size += KeyHandler::SpaceUsedInMap(it->first);
-    size += ValHandler::SpaceUsedInMap(it->second);
-  }
-  return size;
-}
-
-template <typename Key, typename T, FieldDescriptor::Type KeyProto,
-          FieldDescriptor::Type ValueProto, int default_enum_value>
-void MapField<Key, T, KeyProto, ValueProto,
-              default_enum_value>::InitDefaultEntryOnce() const {
-  if (default_entry_ == NULL) {
-    InitMetadataOnce();
-    GOOGLE_CHECK(*entry_descriptor_ != NULL);
-    default_entry_ = down_cast<const EntryType*>(
-        MessageFactory::generated_factory()->GetPrototype(*entry_descriptor_));
-  }
+// ------------------------TypeDefinedMapFieldBase---------------
+template <typename Key, typename T>
+void TypeDefinedMapFieldBase<Key, T>::SetMapIteratorValue(
+    MapIterator* map_iter) const {
+  if (map_iter->iter_.Equals(UntypedMapBase::EndIterator())) return;
+  auto iter = typename Map<Key, T>::const_iterator(map_iter->iter_);
+  SetMapKey(&map_iter->key_, iter->first);
+  map_iter->value_.SetValueOrCopy(&iter->second);
 }
 
 template <typename Key, typename T>
-bool AllAreInitialized(const Map<Key, T>& t) {
-  for (typename Map<Key, T>::const_iterator it = t.begin(); it != t.end();
-       ++it) {
-    if (!it->second.IsInitialized()) return false;
+bool TypeDefinedMapFieldBase<Key, T>::ContainsMapKey(
+    const MapKey& map_key) const {
+  return GetMap().contains(UnwrapMapKey<Key>(map_key));
+}
+
+template <typename Key, typename T>
+bool TypeDefinedMapFieldBase<Key, T>::InsertOrLookupMapValueNoSync(
+    const MapKey& map_key, MapValueRef* val) {
+  auto res = map_.try_emplace(UnwrapMapKey<Key>(map_key));
+  val->SetValue(&res.first->second);
+  return res.second;
+}
+
+template <typename Key, typename T>
+bool TypeDefinedMapFieldBase<Key, T>::LookupMapValue(
+    const MapKey& map_key, MapValueConstRef* val) const {
+  const auto& map = GetMap();
+  auto iter = map.find(UnwrapMapKey<Key>(map_key));
+  if (map.end() == iter) {
+    return false;
   }
+  val->SetValueOrCopy(&iter->second);
   return true;
+}
+
+template <typename Key, typename T>
+bool TypeDefinedMapFieldBase<Key, T>::DeleteMapValue(const MapKey& map_key) {
+  return MutableMap()->erase(UnwrapMapKey<Key>(map_key));
+}
+
+template <typename Key, typename T>
+void TypeDefinedMapFieldBase<Key, T>::Swap(MapFieldBase* other) {
+  MapFieldBase::Swap(other);
+  auto* other_field = DownCast<TypeDefinedMapFieldBase*>(other);
+  map_.Swap(&other_field->map_);
+}
+
+template <typename Key, typename T>
+void TypeDefinedMapFieldBase<Key, T>::MergeFrom(const MapFieldBase& other) {
+  SyncMapWithRepeatedField();
+  const auto& other_field = static_cast<const TypeDefinedMapFieldBase&>(other);
+  other_field.SyncMapWithRepeatedField();
+  internal::MapMergeFrom(map_, other_field.map_);
+  SetMapDirty();
+}
+
+template <typename Key, typename T>
+size_t TypeDefinedMapFieldBase<Key, T>::SpaceUsedExcludingSelfNoLock() const {
+  size_t size = 0;
+  if (auto* p = maybe_payload()) {
+    size += p->repeated_field.SpaceUsedExcludingSelfLong();
+  }
+  // We can't compile this expression for DynamicMapField even though it is
+  // never used at runtime, so disable it at compile time.
+  std::get<std::is_same<Map<Key, T>, Map<MapKey, MapValueRef>>::value>(
+      std::make_tuple(
+          [&](const auto& map) { size += map.SpaceUsedExcludingSelfLong(); },
+          [](const auto&) {}))(map_);
+
+  return size;
+}
+
+template <typename Key, typename T>
+void TypeDefinedMapFieldBase<Key, T>::UnsafeShallowSwap(MapFieldBase* other) {
+  InternalSwap(DownCast<TypeDefinedMapFieldBase*>(other));
+}
+
+template <typename Key, typename T>
+void TypeDefinedMapFieldBase<Key, T>::InternalSwap(
+    TypeDefinedMapFieldBase* other) {
+  MapFieldBase::InternalSwap(other);
+  map_.InternalSwap(&other->map_);
+}
+
+// ----------------------------------------------------------------------
+
+template <typename Derived, typename Key, typename T,
+          WireFormatLite::FieldType kKeyFieldType,
+          WireFormatLite::FieldType kValueFieldType>
+const Message* MapField<Derived, Key, T, kKeyFieldType,
+                        kValueFieldType>::GetPrototype() const {
+  return Derived::internal_default_instance();
 }
 
 }  // namespace internal
 }  // namespace protobuf
-
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"
+
 #endif  // GOOGLE_PROTOBUF_MAP_FIELD_INL_H__

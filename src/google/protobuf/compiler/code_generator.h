@@ -38,18 +38,33 @@
 #ifndef GOOGLE_PROTOBUF_COMPILER_CODE_GENERATOR_H__
 #define GOOGLE_PROTOBUF_COMPILER_CODE_GENERATOR_H__
 
-#include <google/protobuf/stubs/common.h>
+#include <cstdint>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
+
+#include "absl/strings/string_view.h"
+#include "google/protobuf/compiler/retention.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/port.h"
+
+// Must be included last.
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
 
-namespace io { class ZeroCopyOutputStream; }
+namespace io {
+class ZeroCopyOutputStream;
+}
 class FileDescriptor;
+class GeneratedCodeInfo;
 
 namespace compiler {
+class AccessInfoMap;
+
+class Version;
 
 // Defined in this file.
 class CodeGenerator;
@@ -58,38 +73,99 @@ class GeneratorContext;
 // The abstract interface to a class which generates code implementing a
 // particular proto file in a particular language.  A number of these may
 // be registered with CommandLineInterface to support various languages.
-class LIBPROTOC_EXPORT CodeGenerator {
+class PROTOC_EXPORT CodeGenerator {
  public:
-  inline CodeGenerator() {}
+  CodeGenerator() {}
+  CodeGenerator(const CodeGenerator&) = delete;
+  CodeGenerator& operator=(const CodeGenerator&) = delete;
   virtual ~CodeGenerator();
 
   // Generates code for the given proto file, generating one or more files in
   // the given output directory.
   //
-  // A parameter to be passed to the generator can be specified on the
-  // command line.  This is intended to be used by Java and similar languages
-  // to specify which specific class from the proto file is to be generated,
-  // though it could have other uses as well.  It is empty if no parameter was
-  // given.
+  // A parameter to be passed to the generator can be specified on the command
+  // line. This is intended to be used to pass generator specific parameters.
+  // It is empty if no parameter was given. ParseGeneratorParameter (below),
+  // can be used to accept multiple parameters within the single parameter
+  // command line flag.
   //
   // Returns true if successful.  Otherwise, sets *error to a description of
   // the problem (e.g. "invalid parameter") and returns false.
   virtual bool Generate(const FileDescriptor* file,
-                        const string& parameter,
+                        const std::string& parameter,
                         GeneratorContext* generator_context,
-                        string* error) const = 0;
+                        std::string* error) const = 0;
 
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(CodeGenerator);
+  // Generates code for all given proto files.
+  //
+  // WARNING: The canonical code generator design produces one or two output
+  // files per input .proto file, and we do not wish to encourage alternate
+  // designs.
+  //
+  // A parameter is given as passed on the command line, as in |Generate()|
+  // above.
+  //
+  // Returns true if successful.  Otherwise, sets *error to a description of
+  // the problem (e.g. "invalid parameter") and returns false.
+  virtual bool GenerateAll(const std::vector<const FileDescriptor*>& files,
+                           const std::string& parameter,
+                           GeneratorContext* generator_context,
+                           std::string* error) const;
+
+  // This must be kept in sync with plugin.proto. See that file for
+  // documentation on each value.
+  // TODO(b/291092901) Use CodeGeneratorResponse.Feature here.
+  enum Feature {
+    FEATURE_PROTO3_OPTIONAL = 1,
+    FEATURE_SUPPORTS_EDITIONS = 2,
+  };
+
+  // Implement this to indicate what features this code generator supports.
+  //
+  // This must be a bitwise OR of values from the Feature enum above (or zero).
+  virtual uint64_t GetSupportedFeatures() const { return 0; }
+
+  // This is no longer used, but this class is part of the opensource protobuf
+  // library, so it has to remain to keep vtables the same for the current
+  // version of the library. When protobufs does a api breaking change, the
+  // method can be removed.
+  virtual bool HasGenerateAll() const { return true; }
+
+ protected:
+  // Retrieves the resolved source features for a given descriptor.  All the
+  // features that are imported (from the proto file) and linked in (from the
+  // callers binary) will be fully resolved. These should be used to make any
+  // feature-based decisions during code generation.
+  template <typename DescriptorT>
+  static const FeatureSet& GetResolvedSourceFeatures(const DescriptorT& desc) {
+    return ::google::protobuf::internal::InternalFeatureHelper::GetFeatures(desc);
+  }
+
+  // Retrieves the unresolved source features for a given descriptor.  These
+  // should be used to validate the original .proto file.  These represent the
+  // original proto files from generated code, but should be stripped of
+  // source-retention features before sending to a runtime.
+  template <typename DescriptorT, typename TypeTraitsT, uint8_t field_type,
+            bool is_packed>
+  static typename TypeTraitsT::ConstType GetUnresolvedSourceFeatures(
+      const DescriptorT& descriptor,
+      const google::protobuf::internal::ExtensionIdentifier<
+          FeatureSet, TypeTraitsT, field_type, is_packed>& extension) {
+    return ::google::protobuf::internal::InternalFeatureHelper::GetUnresolvedFeatures(
+        descriptor, extension);
+  }
 };
 
 // CodeGenerators generate one or more files in a given directory.  This
 // abstract interface represents the directory to which the CodeGenerator is
 // to write and other information about the context in which the Generator
 // runs.
-class LIBPROTOC_EXPORT GeneratorContext {
+class PROTOC_EXPORT GeneratorContext {
  public:
-  inline GeneratorContext() {}
+  GeneratorContext() {
+  }
+  GeneratorContext(const GeneratorContext&) = delete;
+  GeneratorContext& operator=(const GeneratorContext&) = delete;
   virtual ~GeneratorContext();
 
   // Opens the given file, truncating it if it exists, and returns a
@@ -102,10 +178,10 @@ class LIBPROTOC_EXPORT GeneratorContext {
   // generate the files "foo/bar.pb.h" and "foo/bar.pb.cc"; note that
   // "foo/" is included in these filenames.  The filename is not allowed to
   // contain "." or ".." components.
-  virtual io::ZeroCopyOutputStream* Open(const string& filename) = 0;
+  virtual io::ZeroCopyOutputStream* Open(const std::string& filename) = 0;
 
   // Similar to Open() but the output will be appended to the file if exists
-  virtual io::ZeroCopyOutputStream* OpenForAppend(const string& filename);
+  virtual io::ZeroCopyOutputStream* OpenForAppend(const std::string& filename);
 
   // Creates a ZeroCopyOutputStream which will insert code into the given file
   // at the given insertion point.  See plugin.proto (plugin.pb.h) for more
@@ -114,15 +190,26 @@ class LIBPROTOC_EXPORT GeneratorContext {
   //
   // WARNING:  This feature is currently EXPERIMENTAL and is subject to change.
   virtual io::ZeroCopyOutputStream* OpenForInsert(
-      const string& filename, const string& insertion_point);
+      const std::string& filename, const std::string& insertion_point);
+
+  // Similar to OpenForInsert, but if `info` is non-empty, will open (or create)
+  // filename.pb.meta and insert info at the appropriate place with the
+  // necessary shifts. The default implementation ignores `info`.
+  //
+  // WARNING:  This feature will be REMOVED in the near future.
+  virtual io::ZeroCopyOutputStream* OpenForInsertWithGeneratedCodeInfo(
+      const std::string& filename, const std::string& insertion_point,
+      const google::protobuf::GeneratedCodeInfo& info);
 
   // Returns a vector of FileDescriptors for all the files being compiled
   // in this run.  Useful for languages, such as Go, that treat files
   // differently when compiled as a set rather than individually.
-  virtual void ListParsedFiles(vector<const FileDescriptor*>* output);
+  virtual void ListParsedFiles(std::vector<const FileDescriptor*>* output);
 
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(GeneratorContext);
+  // Retrieves the version number of the protocol compiler associated with
+  // this GeneratorContext.
+  virtual void GetCompilerVersion(Version* version) const;
+
 };
 
 // The type GeneratorContext was once called OutputDirectory. This typedef
@@ -132,14 +219,19 @@ typedef GeneratorContext OutputDirectory;
 // Several code generators treat the parameter argument as holding a
 // list of options separated by commas.  This helper function parses
 // a set of comma-delimited name/value pairs: e.g.,
-//   "foo=bar,baz,qux=corge"
+//   "foo=bar,baz,moo=corge"
 // parses to the pairs:
-//   ("foo", "bar"), ("baz", ""), ("qux", "corge")
-extern void ParseGeneratorParameter(const string&,
-            vector<pair<string, string> >*);
+//   ("foo", "bar"), ("baz", ""), ("moo", "corge")
+PROTOC_EXPORT void ParseGeneratorParameter(
+    absl::string_view, std::vector<std::pair<std::string, std::string> >*);
+
+// Strips ".proto" or ".protodevel" from the end of a filename.
+PROTOC_EXPORT std::string StripProto(absl::string_view filename);
 
 }  // namespace compiler
 }  // namespace protobuf
-
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"
+
 #endif  // GOOGLE_PROTOBUF_COMPILER_CODE_GENERATOR_H__

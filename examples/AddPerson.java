@@ -1,7 +1,7 @@
-// See README.txt for information and build instructions.
+// See README.md for information and build instructions.
 
-import com.example.tutorial.AddressBookProtos.AddressBook;
-import com.example.tutorial.AddressBookProtos.Person;
+import com.example.tutorial.protos.AddressBook;
+import com.example.tutorial.protos.Person;
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -50,7 +50,7 @@ class AddPerson {
         stdout.println("Unknown phone type.  Using default.");
       }
 
-      person.addPhone(phoneNumber);
+      person.addPhones(phoneNumber);
     }
 
     return person.build();
@@ -80,7 +80,7 @@ class AddPerson {
     }
 
     // Add an address.
-    addressBook.addPerson(
+    addressBook.addPeople(
       PromptForAddress(new BufferedReader(new InputStreamReader(System.in)),
                        System.out));
 
